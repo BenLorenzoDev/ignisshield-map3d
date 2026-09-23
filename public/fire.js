@@ -89,7 +89,11 @@
   }
 
   class FireModel {
-    constructor(cells, adjacency, ignitionId, seed = 42, stepMinutes = 1.0, maxMinutes = 60) {
+    /** hook (optional, not part of model.py): hook(minute, states) -> {extinguish: ids, protect: Map id -> factor}.
+     *  Used only for the optional BFP response; without it the model is exactly model.py. */
+    constructor(cells, adjacency, ignitionId, seed = 42, stepMinutes = 1.0, maxMinutes = 60, hook = null) {
+      this.hook = hook;
+      this.protect = null;
       this.cells = new Map(cells.map(c => [c.id, c]));
       this.ids = [...this.cells.keys()].sort((a, b) => a - b);
       if (!this.cells.size || !this.cells.has(ignitionId)) throw new Error('Choose an ignition building in the input layer');
@@ -134,9 +138,11 @@
       this.peakHrr = Math.max(this.peakHrr, kw / 1000);
       this.peakIntensity = Math.max(this.peakIntensity, perimeter ? kw / perimeter : 0);
       let burned = 0, affected = 0;
-      for (const s of this.states.values()) if (s === 'burned') burned++;
+      let extinguished = 0;
+      for (const s of this.states.values()) { if (s === 'burned') burned++; else if (s === 'extinguished') extinguished++; }
       for (const k of this.ignitedAt.keys()) affected += this.cells.get(k).area;
       const row = {Minute: this.minute, Burning: burning.length, Burned: burned, Affected_Area_M2: affected, HRR_MW: kw / 1000};
+      if (this.hook) row.Extinguished = extinguished;
       this.timeline.push(row);
       return row;
     }
@@ -144,12 +150,17 @@
     step() {
       if (this.finished) return this.timeline[this.timeline.length - 1];
       const dt = Math.min(this.dt, this.maxMinutes - this.minute);
+      if (this.hook) { // firefighting acts at the start of the minute
+        const act = this.hook(this.minute, this.states) || {};
+        for (const id of act.extinguish || []) if (this.states.get(id) === 'burning') this.states.set(id, 'extinguished');
+        this.protect = act.protect || null;
+      }
       const hazards = new Map();
       for (const sourceId of this.ids) {
         if (this.states.get(sourceId) !== 'burning') continue;
         for (const [targetId, gap] of this.adjacency.get(sourceId) || []) {
           if (this.states.get(targetId) === 'safe') {
-            hazards.set(targetId, (hazards.get(targetId) || 0.0) + ignitionRate(this.cells.get(sourceId), this.cells.get(targetId), gap));
+            hazards.set(targetId, (hazards.get(targetId) || 0.0) + ignitionRate(this.cells.get(sourceId), this.cells.get(targetId), gap) * (this.protect?.get(targetId) ?? 1));
           }
         }
       }
@@ -162,7 +173,7 @@
         }
       }
       for (const [k, at] of this.ignitedAt) {
-        if (nextMinute - at >= this.duration.get(k)) this.states.set(k, 'burned');
+        if (this.states.get(k) === 'burning' && nextMinute - at >= this.duration.get(k)) this.states.set(k, 'burned');
       }
       this.minute = nextMinute;
       return this.record();
@@ -288,11 +299,12 @@
   }
 
   /** Run to the horizon and keep every minute's states, as engine.run_fire does. */
-  function simulate(features, valuesFor, ignitionIndex, seed, minutes) {
+  /** makeHook (optional): (cells) => hook for FireModel, used for the BFP response. */
+  function simulate(features, valuesFor, ignitionIndex, seed, minutes, makeHook = null) {
     const started = performance.now();
     const {cells, adjacency} = buildCells(features, valuesFor);
-    const model = new FireModel(cells, adjacency, ignitionIndex, seed, 1, minutes);
-    const code = {safe: 0, burning: 1, burned: 2};
+    const model = new FireModel(cells, adjacency, ignitionIndex, seed, 1, minutes, makeHook ? makeHook(cells) : null);
+    const code = {safe: 0, burning: 1, burned: 2, extinguished: 3};
     const frame = () => ({minute: model.minute, states: Uint8Array.from(model.ids, id => code[model.states.get(id)])});
     const frames = [frame()];
     while (!model.finished) { model.step(); frames.push(frame()); }

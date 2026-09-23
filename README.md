@@ -167,6 +167,21 @@ Every fire run also shows the residents walking to safety (`public/evac.js`, dis
 - **Limits:** everyone leaves at once and walks at 4.5 km/h, with no crowding, panic or waiting for family, so real evacuations take longer. Routes are only as good as the mapped alleys.
 
 
+## Optional BFP fire-truck response
+
+Off by default and **not part of the students' paper model**. Tick **Include the BFP fire truck response** in step 2 of the form (`public/bfp.js`, display in `public/bfp-ui.js`):
+
+1. **Call and turnout:** the BFP receives the call after *Call received after* (default 3 min). The truck leaves the station *Crew turnout* later (1 min).
+2. **Drive:** it takes the fastest route at *Truck speed* (30 km/h), using the fire-engine road rules (width ≥ 2.5 m, access, one-way) and avoiding roads within 10 m of flames.
+3. **Stand-by position:** it parks at the reachable road point closest to the fire, at least 10 m away.
+4. **Spraying:** it puts out *Buildings put out per minute* (1) burning buildings within *Hose reach* (60 m), nearest first. Buildings put out turn blue-grey and stop spreading fire. Safe buildings within reach are wetted and catch 4× less easily.
+5. **Moving on:** when nothing burns within reach, it drives to the next part of the fire. If no road gets it within reach, the results say so.
+
+All values are drafts to be replaced with BFP figures. The station starts at an approximate spot (Balamban Municipal Hall), because the BFP station is not in OpenStreetMap; editors set the real location with **Set station location**.
+
+The fire acts through an optional hook in `FireModel`. Without it the model is exactly `model.py`, which the parity test confirms. Results show the same fire and replay number with and without the BFP. The log records `bfp_response`, `bfp_first_on_scene_min`, `bfp_buildings_put_out` and `bfp_ignited_without`.
+
+
 ## Model and tests
 
 `public/fire.js` and `public/routing.js` are line-for-line ports of IgnisShield-Web's `backend/model.py` and `engine.py` (model 0.4.0). They use Python's own random number generator, so a seed reproduces the Python run exactly. It is an uncalibrated teaching model with disclosed assumptions, not a forecast.

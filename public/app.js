@@ -22,7 +22,7 @@ const waybackTiles = release => [`https://wayback.maptiles.arcgis.com/arcgis/res
 let imagery = (() => { try { return IMAGERY.find(i => i.release === localStorage.getItem(IMAGERY_KEY)) ?? IMAGERY[0]; } catch { return IMAGERY[0]; } })();
 
 const buildingColor = burning => ['match', ['coalesce', ['feature-state', 'fire'], 'safe'],
-  'burning', burning, 'burned', FIRE.burned,
+  'burning', burning, 'burned', FIRE.burned, 'extinguished', '#78909c',
   ['case', ['all', ['==', ['get', 'origin'], 'ai'], ['!', ['coalesce', ['get', 'edited'], false]]], COLOR.ai, COLOR.user]];
 
 const map = new maplibregl.Map({
@@ -269,6 +269,7 @@ map.on('load', async () => {
   initRoutes(data);
   initField();
   initEvac();
+  initBfp();
   document.body.classList.remove('loading'); // toolbar usable once every layer exists
   applyLayers();
 });
@@ -483,6 +484,7 @@ map.on('mouseup', () => {
 });
 
 map.on('click', e => {
+  if (bfpClick(e)) return;
   if (safeClick(e)) return;
   if (routeClick(e)) return;
   if (fieldClick(e)) return;

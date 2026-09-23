@@ -12,7 +12,7 @@ const fui = {
   boundaryOnly: $('#boundary-only'), panelClose: $('#panel-close'), guide: $('#guide'), guideHide: $('#guide-hide'), help: $('#help-btn'),
   playback: $('#playback'), play: $('#play'), restart: $('#restart'), frame: $('#frame'), minute: $('#minute'),
   speed: $('#speed'), status: $('#run-status'), windArrow: $('#wind-arrow'), windText: $('#wind-text'),
-  metrics: $('#metrics'), headline: $('#result-headline'), results: $('#results'), runningNote: $('#running-note'), skip: $('#skip-results'), clearFire: $('#clear-fire'), batchRun: $('#batch-run'), outputNotes: $('#output-notes'),
+  metrics: $('#metrics'), headline: $('#result-headline'), bfpSummary: $('#bfp-summary'), results: $('#results'), runningNote: $('#running-note'), skip: $('#skip-results'), clearFire: $('#clear-fire'), batchRun: $('#batch-run'), outputNotes: $('#output-notes'),
   logBtn: $('#log-btn'), log: $('#log'), logBody: $('#log-body'), logCount: $('#log-count'),
   logCsv: $('#log-csv'), logClear: $('#log-clear'),
   live: $('#weather-block'), wxLoad: $('#wx-load'), wxHour: $('#wx-hour'), wxStatus: $('#wx-status')
@@ -47,6 +47,7 @@ function renderScenario() {
   fui.runInputs.innerHTML = RUN_FIELDS.map(v => `<label class="field" data-info="${v.key}"><span>${v.name} <span class="x-i">ⓘ</span></span><input id="run-${v.key}" type="number" min="${v.min}" max="${v.max}" step="${v.step}" value="${scenario[v.key]}"></label>`).join('');
   fui.boundaryOnly.checked = scenario.boundaryOnly;
   renderSim();
+  if (typeof renderBfpForm === 'function') renderBfpForm();
   updateWind();
   if (selected()) updatePanel();
 }
@@ -213,6 +214,30 @@ const HELP = {
     what: 'Where the residents go. When the fire comes within 30 m of a building, or the building itself catches, its residents leave and walk to the nearest safe place: a safe area set by the class (Routes panel) or the main road, which the paper describes as cemented and passable. People per building = households (X6) × 5, the Baliwagan average (2026 census).',
     get: 'Watch the dots: white = walking, green = reached safety, red = cut off (every street out was blocked by fire when they set off), grey = no mapped road or alley near their home yet. Solid green = route along mapped roads and alleys; dotted = the walk from home to the nearest mapped one, where the real alley is not drawn yet. Draw the missing alleys (Draw path) to make routes realistic.',
     sim: 'Each family steps out of its door onto the nearest road or alley it can reach without crossing water or passing a burning house, then walks the network (roads plus the alleys from the GPS walks). They see where the fire is: streets beside burning buildings are closed, streets within 30 m of the fire are avoided, and every minute they check the way ahead — if the fire has blocked it, they turn back or take another street. It does not change the fire. Times assume people leave at once and walk at 4.5 km/h; no crowding, so real evacuations are slower.'},
+  bfp: {title: 'BFP fire truck response (optional)',
+    what: 'Adds the Bureau of Fire Protection: the station receives the call, a truck drives there on roads wide enough for it, parks near the fire and sprays water. The students’ paper model does not include this; leave it unticked for the paper’s runs.',
+    get: 'Set the call and turnout times, truck speed, hose reach and how many burning buildings the crew can put out per minute (draft values; ask the BFP for real ones). Editors set the station location once (it starts at an approximate spot).',
+    sim: 'The truck uses the fire-truck road rules (width, access, one-way) and avoids streets beside the flames. It parks at the reachable road point closest to the fire, at least 10 m away, puts out the nearest burning buildings within reach and wets the others within reach so they catch 4× less easily. When nothing burns within reach it drives to the next part of the fire. The results compare the same fire with and without the BFP.'},
+  'bfp-callMin': {title: 'Call received after',
+    what: 'Minutes from the first flame until the BFP receives the call: someone notices the fire, finds a phone and reports it.',
+    get: 'Ask the BFP for their typical reporting delay in Sitio Polo. 3 minutes is a draft value; night-time fires are often reported later.',
+    sim: 'Nothing happens before this minute. The whole response starts from it.'},
+  'bfp-turnoutMin': {title: 'Crew turnout',
+    what: 'Minutes from receiving the call until the truck leaves the station (crew gets dressed and aboard).',
+    get: 'BFP stations aim for about 1 minute; ask the Balamban station.',
+    sim: 'The truck leaves the station at call + turnout.'},
+  'bfp-speedKmh': {title: 'Truck speed',
+    what: 'Average driving speed of the fire truck on open roads.',
+    get: '30 km/h is a draft for town streets; narrow or crowded roads are slower automatically.',
+    sim: 'Travel time per road uses the same rules as the fire-engine routes (slower on narrow and crowded roads).'},
+  'bfp-reachM': {title: 'Hose reach',
+    what: 'How far from the parked truck the crew can bring water: hose length plus the water jet.',
+    get: 'A few hose lengths of about 15–20 m each plus the jet; ask the BFP. 60 m is a draft value.',
+    sim: 'Only burning buildings within this distance of the truck can be put out; safe buildings within it are wetted and catch 4× less easily.'},
+  'bfp-perMin': {title: 'Buildings put out per minute',
+    what: 'How many burning buildings the crew can put out each minute while spraying.',
+    get: 'Depends on water supply and hose lines; 1 per minute is a draft for one truck.',
+    sim: 'Each minute the nearest burning buildings within reach are put out (they turn blue-grey and stop spreading fire).'},
   gpspaths: {title: 'Turn walks into escape paths',
     what: 'GPS walks are only a record of where students walked; evacuation cannot use them directly because phone GPS wobbles 3–5 m and walks go back and forth. This button turns them into proper paths that evacuation does use.',
     get: 'It keeps only the parts of the walks that are not already on a road or path (so the main road and alleys walked twice are not duplicated), smooths the wobble, and joins each end onto the road it meets. Each new path is a 1 m walking path marked “from GPS walk”: click it afterwards to enter the measured width, fix its position, or delete it.',
@@ -260,6 +285,7 @@ function infoContent(key) {
       <h4>In this run</h4><p class="info-now">${outputNow(i, o)}</p>`;
   }
   const h = HELP[key];
+  if (!h) return '';
   return `<div class="info-head">${h.title}${h.sub ? ` <span class="info-unit">${h.sub}</span>` : ''}</div>
     ${sec('What it is', h.what)}${sec('How to use it', h.get)}${sec('In the simulation', h.sim)}`;
 }
@@ -463,6 +489,7 @@ function onRemoteRun(row) {
   if (!fui.log.hidden) renderLog();
 }
 function onRemoteSetting(row) {
+  if (row?.key === 'bfp_station') { onRemoteBfpStation(row.value); return; }
   if (row?.key === 'safe_areas') { onRemoteSafeAreas(row.value); return; }
   if (row?.key !== 'trials') return;
   scenario.trials = {...draftTrials(), ...row.value};
@@ -514,7 +541,7 @@ let run = null;   // run being shown: {id, result, features, ids}
 let shown = null; // fire state currently drawn for each building
 let frameIndex = 0;
 let playTimer = null; // truthy while playing (route-ui checks it)
-const STATE_NAMES = ['safe', 'burning', 'burned'];
+const STATE_NAMES = ['safe', 'burning', 'burned', 'extinguished'];
 
 async function startFire() {
   const origin = selected();
@@ -535,14 +562,19 @@ async function startFire() {
     const w = trial ? scenario.trials[scenario.source] : scenario.custom, wind = {Tw: w.Tw, Uw: w.Uw}; // smoke drifts downwind
     // Evacuation on foot for every run (same network and residents for the whole batch)
     const evacCtx = prepareEvac(features, inputs, features.map(f => buildingPaperValues(f).Nh));
+    const bfpCtx = prepareBfp(features, inputs); // optional BFP response (off by default; not part of the paper's model)
     let first = null;
     const records = [];
     for (let k = 0; k < scenario.repeats; k++) {
       const seed = scenario.seed + k;
-      const result = IgnisFire.simulate(features, f => byFeature.get(f), index, seed, scenario.minutes);
+      const truck = bfpCtx ? bfpCtx.create() : null;
+      const result = IgnisFire.simulate(features, f => byFeature.get(f), index, seed, scenario.minutes, truck ? () => truck.hook : null);
+      // with the BFP on, also run the same fire without it, for the comparison in the results
+      const noBfp = truck ? IgnisFire.simulate(features, f => byFeature.get(f), index, seed, scenario.minutes) : null;
       const id = `${batch}-${k}`;
       const evac = evacCtx ? evacCtx.evaluate(result.frames) : null, es = evac?.summary;
-      sessionRuns.set(id, {id, result, features, ids, seed, wind, evac});
+      sessionRuns.set(id, {id, result, features, ids, seed, wind, evac, bfp: truck?.timeline ?? null,
+        noBfpIgnited: noBfp ? noBfp.frames.at(-1).states.filter(s => s > 0).length : null});
       const out = P.outputs(result.metrics);
       records.push({
         id, batch, utc, run_in_batch: k + 1, scenario: trial ? `Trial ${scenario.source} conditions` : 'Custom',
@@ -554,6 +586,8 @@ async function startFire() {
         Y1_Sf: out[0].value, level: P.level(out[0].value), Y2_If_kW_m: out[1].value, Y3_R_m_min: out[2].value, Y4_Q_MW: out[3].value,
         Y5_Ab_m2: out[4].value, Y6_phi_deg: out[5].value, Y7_tau_min: out[6].value, Y8_Tsim_min: out[7].value,
         evac_people: es?.people ?? '', evac_reached_safety: es?.safe ?? '', evac_no_safe_route: es?.trapped ?? '', evac_no_mapped_path: es?.nopath ?? '',
+        bfp_response: truck ? 'on' : 'off', bfp_first_on_scene_min: truck?.timeline.arrivals[0] ? +truck.timeline.arrivals[0].minute.toFixed(2) : '',
+        bfp_buildings_put_out: truck ? truck.timeline.extinguished : '', bfp_ignited_without: noBfp ? noBfp.frames.at(-1).states.filter(s => s > 0).length : '',
         evac_avg_min: es ? +es.avgMin.toFixed(2) : '', evac_max_min: es ? +es.maxMin.toFixed(2) : '', safe_areas: safeAreas.map(s => s.name).join('; '),
         status: result.status, model: result.model, calc_s: result.metrics.Total_Simulation_Time_Sec
       });
@@ -595,6 +629,9 @@ function showRun(id) {
   fui.metrics.innerHTML = outs.map((o, i) =>
     `<div class="metric" data-info="out-${i}" tabindex="0"><span>${o.sym} ${o.name}</span><strong>${o.text}</strong><small>${o.unit}</small></div>`).join('');
   evacShow(run);
+  bfpShow(run, run.features);
+  fui.bfpSummary.innerHTML = bfpSummaryHtml(run, run.noBfpIgnited);
+  fui.bfpSummary.hidden = !run.bfp;
   legendForFire();
   setResults(false);
   updateWind();
@@ -628,7 +665,7 @@ function prepareEffects(r) {
     for (let i = 0; i < n; i++) {
       const s = f.states[i];
       if (s > 0 && Number.isNaN(ig[i])) ig[i] = f.minute;
-      if (s === 2 && Number.isNaN(out[i])) out[i] = f.minute;
+      if (s >= 2 && Number.isNaN(out[i])) out[i] = f.minute;
     }
   }
   const finished = [];
@@ -677,7 +714,7 @@ function showFrame(k) {
         seed: seedOf(i, j), ig: ig[i], dur: dur[i]}));
       points.push({type: 'Feature', geometry: {type: 'Point', coordinates: c.centre}, properties: {ig: ig[i], dur: dur[i], ph: phase(i)}});
     }
-    if (s === 1 || (s === 2 && minute - out[i] < 8)) smoky.push(i);
+    if (s === 1 || (s >= 2 && minute - out[i] < 8)) smoky.push(i);
   });
   // Smoke: two puffs per building, drifting downwind as they rise
   smoky.sort((a, b) => ig[b] - ig[a]);
@@ -695,7 +732,7 @@ function showFrame(k) {
   const row = run.result.timeline[k];
   fui.frame.value = k;
   showClock();
-  fui.status.textContent = `${row.Burning} burning · ${row.Burned} burned${k === frames.length - 1 ? ` · ${run.result.status}` : ''}`;
+  fui.status.textContent = `${row.Burning} burning · ${row.Burned} burned${row.Extinguished ? ` · ${row.Extinguished} put out` : ''}${k === frames.length - 1 ? ` · ${run.result.status}` : ''}`;
   if (k === frames.length - 1) setResults(true);
   paintFire();
   if (typeof onFireFrame === 'function') onFireFrame();
@@ -730,7 +767,7 @@ function loop(ts) {
     if (displayMinute >= end) pause();
   }
   fireGL.setClock(displayMinute, clock); // flames and smoke animate every frame on the GPU
-  if (ts - lastPaint > 70) { lastPaint = ts; paintFire(); evacTick(displayMinute); showClock(); }
+  if (ts - lastPaint > 70) { lastPaint = ts; paintFire(); evacTick(displayMinute); bfpTick(displayMinute); showClock(); }
 }
 
 /** Buildings burning or burned at the minute on screen (for routing around the fire). */
@@ -749,6 +786,7 @@ function pause() {
   fui.play.textContent = 'Play';
 }
 function clearFire() {
+  bfpShow(null);
   evacClear();
   pause();
   cancelAnimationFrame(rafId);

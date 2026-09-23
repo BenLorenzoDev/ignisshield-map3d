@@ -101,6 +101,11 @@
           </select></label>
       </div>
       <div id="sim-note" class="muted small"></div>
+      <label class="check bfp-check" data-info="bfp"><input id="bfp-toggle" type="checkbox"> Include the BFP fire truck response <span class="x-i">ⓘ</span></label>
+      <div id="bfp-fields" hidden>
+        <div class="bfp-grid grid2"></div>
+        <div class="row"><span id="bfp-station-info" class="muted small"></span><button id="bfp-set-station" class="soft">Set station location</button></div>
+      </div>
     </section>
 
     <details class="step">
@@ -156,7 +161,8 @@
     <ul>
       <li><i class="sw sw-safe"></i><span><b>Safe area</b> set by the class; the main road also counts as safe.</span></li>
       <li><i class="sw sw-ai"></i><span><b>AI outline</b> building · <i class="sw sw-user"></i> traced or edited · <i class="sw sw-sel"></i> selected</span></li>
-      <li><i class="sw sw-burn"></i><span><b>Burning</b> (with flames and smoke) · <i class="sw sw-burned"></i> <b>burned out</b></span></li>
+      <li><i class="sw sw-burn"></i><span><b>Burning</b> (with flames and smoke) · <i class="sw sw-burned"></i> <b>burned out</b> · <i class="sw sw-out"></i> <b>put out</b> by the BFP</span></li>
+      <li><i class="sw sw-truck"></i><span><b>BFP fire truck</b> (optional response), its route <i class="ln ln-truck inline"></i> and <b>water spray</b> <i class="ln ln-water inline"></i> onto a burning building. The red house marker is the BFP station.</span></li>
     </ul>
   </div>
 
@@ -257,6 +263,7 @@
       <label class="check evac-legend" data-info="evac"><input id="evac-toggle" type="checkbox" checked> Evacuation <img class="fig fig-moving" alt="">escaping <img class="fig fig-arrived" alt="">safe <img class="fig fig-trapped" alt="">cut off</label>
       <span id="run-status" class="muted"></span>
     </div>
+    <div id="bfp-status" class="small" hidden></div>
     <div id="running-note" class="row">
       <span class="muted">Simulating… the results (severity and outputs Y1–Y8) appear when the fire finishes.</span>
       <button id="skip-results" class="soft">Skip to results</button>
@@ -264,6 +271,7 @@
     <div id="results" hidden>
       <div id="result-headline"></div>
       <div id="evac-summary" data-info="evac" hidden></div>
+      <div id="bfp-summary" data-info="bfp" hidden></div>
       <details open>
         <summary>All outputs (paper Y1–Y8)</summary>
         <div id="metrics"></div>
@@ -280,6 +288,7 @@
   <script src="paper.js"></script>
   <script src="routing.js"></script>
   <script src="evac.js"></script>
+  <script src="bfp.js"></script>
   <script src="fire-gl.js"></script>
   <script src="field.js"></script>
   <script src="app.js"></script>
@@ -287,6 +296,7 @@
   <script src="route-ui.js"></script>
   <script src="paths-ui.js"></script>
   <script src="evac-ui.js"></script>
+  <script src="bfp-ui.js"></script>
   <script src="cloud-ui.js"></script>
 </body>
 </html>

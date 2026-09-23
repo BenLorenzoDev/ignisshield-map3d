@@ -264,3 +264,15 @@ button.fire.big { padding: 10px; font-size: 15px; }
   body.legend-open #playback { left: calc(354px + (100% - 354px) / 2); width: min(760px, calc(100% - 378px)); }
 }
 .ln-bridge { border-top: 6px solid #6d4c41; opacity: .7; }
+
+/* BFP */
+.bfp-check { margin-top: 4px; font-weight: 600; }
+#bfp-fields { display: grid; gap: 6px; background: #fff5f5; border: 1px solid #ffcdd2; border-radius: 6px; padding: 6px 8px; }
+#bfp-fields .row { justify-content: space-between; align-items: center; gap: 6px; }
+#bfp-status { background: #ffebee; color: #b71c1c; border-radius: 6px; padding: 4px 8px; font-weight: 600; }
+#bfp-summary { font-size: 13px; background: #ffebee; border-radius: 6px; padding: 6px 8px; }
+.sw-out { background: #78909c; } .sw-truck { background: #c62828; border-radius: 3px; width: 18px; height: 10px; }
+.ln-truck { border-top: 3px dashed #d50000; } .ln-water { border-top: 3px solid #4fc3f7; }
+.ln.inline { display: inline-block; width: 18px; vertical-align: middle; }
+#panel .bfp-check input, #panel .check input { width: auto !important; margin: 0 4px 0 0 !important; flex: 0 0 auto; }
+#panel .check { justify-content: flex-start; text-align: left; }

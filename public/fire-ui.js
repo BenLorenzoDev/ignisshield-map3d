@@ -99,9 +99,9 @@ const num = v => (typeof v === 'number' ? v : '');
 /** One table row: symbol, meaning, value box, unit (the paper's Notations table). */
 function inputRow(v, value, placeholder, note) {
   const weather = v.scope === 'weather';
-  return `<label class="x-row${weather ? ' weather' : ''}" title="${v.help ?? ''}">` +
+  return `<label class="x-row${weather ? ' weather' : ''}" data-key="${v.key}">` +
     `<span class="x-sym">${v.sym.replace(/ \((X\d)\)/, ' <i>$1</i>')}</span>` +
-    `<span class="x-name">${v.name}${weather ? ' <em>whole fire</em>' : ''}${note ? `<small>${note}</small>` : ''}</span>` +
+    `<span class="x-name">${v.name} <span class="x-i" aria-hidden="true">ⓘ</span>${weather ? ' <em>whole fire</em>' : ''}${note ? `<small>${note}</small>` : ''}</span>` +
     `<input id="x-${v.key}" type="number" min="${v.min}" max="${v.max}" step="${v.step}" value="${num(value)}" placeholder="${placeholder}">` +
     `<span class="x-unit">${v.unit.split(' (')[0].replace('count in this structure', 'count')}</span></label>`;
 }
@@ -113,12 +113,23 @@ function renderInputs(f) {
     ? `Trial ${scenario.source} conditions (paper Table 1): ${trial.text} These nine values are used for every building in the run. Draft numbers: the paper gives none${cloud.enabled ? '. Shared by the class.' : '.'} The severity is not set here: the simulation works it out.`
     : 'X1, X2, X3, X6 and X7 belong to this building. X4, X5, X8 and X9 are the weather for the whole fire.';
   const values = trial ? scenario.trials[scenario.source] : {...Object.fromEntries(BUILDING_FIELDS.map(v => [v.key, p[v.key]])), ...scenario.custom};
-  fui.xInputs.innerHTML = P.INPUTS.map(v => {
-    const placeholder = v.auto ? local.Db.toFixed(4) : (trial ? '' : String(v.def));
-    const note = v.auto && values.Db == null ? 'measured from the map'
-      : v.key === 'Mb' ? `≈ ${Math.round((values.Mb ?? v.def) / P.RULES.woodMJPerKg)} kg/m² of wood` : v.key === 'O2' ? '1 = normal air (20.9 % O₂)' : '';
-    return inputRow(v, values[v.key], placeholder, note);
-  }).join('');
+  const signature = `${p.id}|${scenario.source}|${canEdit()}`;
+  const rows = P.INPUTS.map(v => ({v,
+    placeholder: v.auto ? local.Db.toFixed(4) : (trial ? '' : String(v.def)),
+    note: v.auto && values.Db == null ? 'measured from the map'
+      : v.key === 'Mb' ? `≈ ${Math.round((values.Mb ?? v.def) / P.RULES.woodMJPerKg)} kg/m² of wood` : v.key === 'O2' ? '1 = normal air (20.9 % O₂)' : ''}));
+  if (fui.xInputs.dataset.signature !== signature) {
+    fui.xInputs.innerHTML = rows.map(r => inputRow(r.v, values[r.v.key], r.placeholder, r.note)).join('');
+    fui.xInputs.dataset.signature = signature;
+  } else {
+    for (const r of rows) {
+      const el = document.getElementById(`x-${r.v.key}`);
+      if (el !== document.activeElement) el.value = num(values[r.v.key]);
+      el.placeholder = r.placeholder;
+      const small = el.closest('.x-row').querySelector('.x-name small');
+      if (small) small.textContent = r.note;
+    }
+  }
   // Who may change what: building values and class trial values need an editor; custom weather is this device only
   fui.xInputs.querySelectorAll('input').forEach(el => {
     const scope = P.BY_KEY[el.id.slice(2)].scope;
@@ -127,6 +138,7 @@ function renderInputs(f) {
   fui.live.hidden = Boolean(trial);
   fui.wxStatus.textContent = scenario.custom.source ?? 'Weather entered by hand.';
   fui.resetTrial.hidden = !trial || (cloud.enabled && !canEdit());
+  if (infoKey) setTimeout(() => showInfo(infoKey), 0);
   let m;
   try { m = P.toModel(buildingPaperValues(f), local); } catch (err) { fui.inputsNote.textContent = err.message; return; }
   fui.inputsNote.innerHTML = [
@@ -159,10 +171,65 @@ fui.xInputs.addEventListener('change', e => {
   updatePanel();
 });
 
+// ---------- information card beside the form: what each input means and what it does ----------
+const infoCard = $('#input-info'), infoLine = $('#input-info-line');
+let infoKey = null;     // row shown in the card
+let focusKey = null;    // row being typed in (the card returns to it after a hover)
+function showInfo(key) {
+  const f = selected(), row = fui.xInputs.querySelector(`.x-row[data-key="${key}"]`);
+  if (!f || !row || fui.xInputs.closest('#panel').hidden) { hideInfo(); return; }
+  infoKey = key;
+  const v = P.BY_KEY[key], info = P.INFO[key], weather = v.scope === 'weather';
+  let now;
+  try {
+    const x = buildingPaperValues(f), typed = row.querySelector('input').value;
+    if (typed !== '') x[key] = P.check(key, Number(typed)); // preview the number being typed
+    now = info.now(x, P.toModel(x, measuredDensity().get(f.properties.id)));
+  }
+  catch (err) { now = err.message; }
+  const trial = P.TRIALS[scenario.source];
+  infoCard.innerHTML = `
+    <div class="info-head"><span class="x-sym">${v.sym}</span> ${v.name} <span class="info-unit">${v.unit}</span></div>
+    ${weather ? '<div class="info-tag">Weather: the same value applies to every building in the fire.</div>' : ''}
+    <h4>What it is</h4><p>${info.what}</p>
+    <h4>How to get the value</h4><p>${info.get}</p>
+    <h4>How the simulation uses it</h4><p>${info.sim}</p>
+    <p class="info-up">${info.up}</p>
+    <h4>With the value${trial ? ` of Trial ${scenario.source}` : ''} now</h4><p class="info-now">${now}</p>
+    ${key === 'Mb' || key === 'Db' || key === 'O2' ? '<p class="muted small">The link from this paper unit to the model is a draft rule until the students give their formula.</p>' : ''}`;
+  infoCard.hidden = infoLine.hidden = false;
+  placeInfo();
+}
+function placeInfo() {
+  if (infoCard.hidden || !infoKey) return;
+  const row = fui.xInputs.querySelector(`.x-row[data-key="${infoKey}"]`);
+  if (!row) { hideInfo(); return; }
+  const panel = fui.xInputs.closest('#panel').getBoundingClientRect(), r = row.getBoundingClientRect(), input = row.querySelector('input').getBoundingClientRect();
+  const left = panel.right + 36, mid = r.top + r.height / 2;
+  const topMin = panel.top, topMax = window.innerHeight - infoCard.offsetHeight - 12;
+  infoCard.style.left = `${left}px`;
+  infoCard.style.top = `${Math.max(topMin, Math.min(topMax, mid - 40))}px`;
+  // connector from the field to the card, as long as the row is visible in the panel
+  const visible = mid > panel.top && mid < panel.bottom;
+  infoLine.hidden = !visible;
+  Object.assign(infoLine.style, {left: `${input.right}px`, top: `${mid - 1}px`, width: `${left - input.right}px`});
+}
+function hideInfo() { infoKey = null; infoCard.hidden = infoLine.hidden = true; }
+fui.xInputs.addEventListener('mouseover', e => { const row = e.target.closest('.x-row'); if (row && row.dataset.key !== infoKey) showInfo(row.dataset.key); });
+fui.xInputs.addEventListener('mouseleave', () => (focusKey ? showInfo(focusKey) : hideInfo()));
+fui.xInputs.addEventListener('focusin', e => { const row = e.target.closest('.x-row'); if (row) { focusKey = row.dataset.key; showInfo(focusKey); } });
+fui.xInputs.addEventListener('focusout', () => setTimeout(() => {
+  if (!fui.xInputs.contains(document.activeElement)) { focusKey = null; if (!fui.xInputs.matches(':hover')) hideInfo(); }
+}, 0));
+fui.xInputs.addEventListener('input', () => { if (infoKey) setTimeout(() => showInfo(infoKey), 0); });
+fui.xInputs.closest('#panel').addEventListener('scroll', placeInfo);
+window.addEventListener('resize', placeInfo);
+
 // ---------- close, and the "How to run a fire" guide ----------
 const GUIDE_KEY = 'ignisshield-map3d.guide-hidden';
 let guideHidden = (() => { try { return localStorage.getItem(GUIDE_KEY) === '1'; } catch { return false; } })();
 function updateGuide() {
+  if (!selected()) hideInfo();
   const busy = Boolean(selected()) || !fui.playback.hidden || Boolean(drawing) || (typeof pathDraft !== 'undefined' && pathDraft);
   fui.guide.hidden = guideHidden || busy;
 }

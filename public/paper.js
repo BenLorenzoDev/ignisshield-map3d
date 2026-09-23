@@ -95,6 +95,77 @@
       values: {Db: 0.006, Mb: 1500, O2: 1.2, Hr: 35, Ta: 36, Nh: 3, Wr: 1, Uw: 10, Tw: 225}}
   };
 
+  // ---------- plain-language help for each input (shown beside the form) ----------
+  // "sim" and now() follow the model's own formulas in fire.js (susceptibility, ignitionRate, burn duration).
+  const MATERIAL_NAME = {1: 'concrete', 2: 'mixed', 3: 'wood/nipa'};
+  const burnMinutes = m => (4 + 3 * m.bldg_mat + Math.log1p(m.house_cnt)) * (0.8 + m.humidity / 200) / Math.sqrt(m.oxygen_v);
+  const x2 = v => `×${v.toFixed(2)}`;
+  const INFO = {
+    Db: {
+      what: 'How tightly packed the buildings are around this one: structures per square metre of ground. 0.002 means about 20 buildings in a 100 m × 100 m block.',
+      get: 'Leave it blank and the app counts the buildings within 30 m on the map. Or count the structures in a measured area on site.',
+      sim: 'Turned into the share of ground covered by roofs. Crowded buildings catch fire from each other more easily. It also slows walking and fire-truck travel on nearby roads.',
+      up: 'Denser → fire spreads more easily.',
+      now: (x, m) => `${Math.round(m.bldg_dens * 100)} % of the ground within 30 m is roof → ignition ${x2(0.6 + 1.2 * m.bldg_dens)}.`
+    },
+    Mb: {
+      what: 'How much can burn in this building, per square metre of floor: furniture, clothes and stored goods, plus light walls and roofs of wood, plywood, bamboo or tarpaulin.',
+      get: 'Typical: concrete house with little inside 500–700; mixed 700–1,100; wood, nipa or plywood 1,100–1,600 or more. 1 kg of dry wood ≈ 17.5 MJ.',
+      sim: `Draft rule: sorted into a material class (below ${RULES.fuelClassMJ[0]} concrete, below ${RULES.fuelClassMJ[1]} mixed, above that wood/nipa). The class sets how easily the building ignites (×0.35 / ×0.85 / ×1.4), how long it burns and how much heat it gives off.`,
+      up: 'More fuel → catches faster, burns longer and hotter.',
+      now: (x, m) => `class ${m.bldg_mat} (${MATERIAL_NAME[m.bldg_mat]}) → ignition ${x2({1: 0.35, 2: 0.85, 3: 1.4}[m.bldg_mat])}, burns about ${Math.round(burnMinutes(m))} min once alight.`
+    },
+    O2: {
+      what: 'How much air can reach a fire inside. 1 = normal open air (20.9 % oxygen). Below 1: closed, cramped rooms with few openings. Above 1: open-sided structures or strong through-draughts.',
+      get: 'Most houses are 0.8–1.2. Use below 1 for sealed concrete rooms, above 1 for open sheds, stalls or houses on stilts.',
+      sim: 'Multiplies how easily the building ignites and how much heat it gives off. More air also makes it burn out sooner.',
+      up: 'More air → hotter, faster fire that burns out sooner.',
+      now: (x, m) => `ignition and heat ${x2(m.oxygen_v)}; burn time ${x2(1 / Math.sqrt(m.oxygen_v))}.`
+    },
+    Hr: {
+      what: 'Moisture in the air. Rainy days are often 80–90 %; dry summer afternoons can drop to 50–60 %.',
+      get: 'Press “Use live weather”, or read it from PAGASA or a weather app for the day you are simulating.',
+      sim: 'Dry air lets walls and roofs catch more easily. Humid air slightly lowers heat output and makes buildings burn a little longer.',
+      up: 'More humid → fire spreads more slowly.',
+      now: (x, m) => `dryness factor ${x2(0.25 + 0.75 * (1 - m.humidity / 100))} on ignition (dry 0 % = ×1.00).`
+    },
+    Ta: {
+      what: 'Outdoor air temperature. Balamban is usually 25–33 °C.',
+      get: 'Press “Use live weather”, or use PAGASA or a weather app.',
+      sim: 'Warmer materials ignite a little more easily: about 2 % more per °C above 25 °C.',
+      up: 'Hotter → spreads slightly faster.',
+      now: (x, m) => `temperature factor ${x2(Math.exp((m.temp_c - 25) / 45))} on ignition.`
+    },
+    Nh: {
+      what: 'How many households live in this one structure. A building split into three rented rooms counts as 3.',
+      get: 'Ask residents or the barangay; count doors or electric meters.',
+      sim: 'More households mean more belongings to burn: slightly easier ignition and a longer burn.',
+      up: 'More households → a little easier to ignite, burns longer.',
+      now: (x, m) => `household factor ${x2(0.7 + 0.3 * Math.log1p(m.house_cnt))} on ignition.`
+    },
+    Wr: {
+      what: 'Width of the alley or road beside this building: the gap a fire has to cross to reach it.',
+      get: 'Measure the narrowest point with a tape measure. Many interior alleys in Polo are 1 m or less.',
+      sim: 'The gap is one of the strongest effects in the model: ignition ×2 ÷ (width + 0.7). A 1 m alley is about twice as easy for fire to cross as a 3 m road.',
+      up: 'Wider → harder for fire to cross.',
+      now: (x, m) => `gap factor ${x2(2 / (m.alley_wd + 0.7))} on ignition (1 m alley = ×1.18, 3 m = ×0.54).`
+    },
+    Uw: {
+      what: 'Wind speed. About 1 m/s is a calm breeze, 4 m/s moves leaves and small branches, 8 m/s is strong, and typhoon winds are over 17 m/s.',
+      get: 'Press “Use live weather”, or use PAGASA or a weather app. The forecast is measured 10 m above ground; wind in narrow alleys is usually lower.',
+      sim: 'Pushes the fire downwind: buildings downwind become more likely to catch, upwind ones less. Stronger wind also lets fire jump across wider gaps.',
+      up: 'Stronger → faster spread downwind and longer jumps.',
+      now: (x, m) => `downwind ignition up to ${x2(Math.exp(Math.min(2, 0.9 * m.wind_spd / 30)))}, upwind ${x2(Math.exp(-Math.min(2, 0.9 * m.wind_spd / 30)))}; a jump of ${Math.round(6 + 0.4 * m.wind_spd)} m keeps about a third of its strength.`
+    },
+    Tw: {
+      what: 'Direction the wind blows FROM, in degrees clockwise from north: 0 = N, 90 = E, 180 = S, 270 = W. The Amihan (Nov–Apr) comes from about 45° (NE); the Habagat (Jun–Oct) from about 225° (SW).',
+      get: 'Press “Use live weather”, or read it from a weather app (it shows where the wind comes from).',
+      sim: 'The fire leans the opposite way: it spreads mostly toward the direction the wind blows to.',
+      up: 'Sets which neighbours are downwind.',
+      now: (x, m) => { const c = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'], i = d => c[Math.round(d / 45) % 8]; return `wind from ${i(m.wind_dir)} → the fire is pushed toward ${i((m.wind_dir + 180) % 360)}.`; }
+    }
+  };
+
   // ---------- outputs Y1..Y8 ----------
   const LEVELS = [[0.1, 'Low'], [0.3, 'Moderate'], [0.6, 'High'], [Infinity, 'Catastrophic']]; // model.py thresholds; "Extreme" renamed per the paper
   const level = sf => LEVELS.find(([hi]) => sf < hi)[1];
@@ -133,7 +204,7 @@
     return changed;
   }
 
-  const api = {INPUTS, BY_KEY, DEFAULTS, RULES, RULE_TEXT, TRIALS, OUTPUT_NOTES, materialClass, localDensity, check, toModel, level, outputs, migrate};
+  const api = {INPUTS, BY_KEY, DEFAULTS, RULES, RULE_TEXT, TRIALS, OUTPUT_NOTES, INFO, materialClass, localDensity, check, toModel, level, outputs, migrate};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.IgnisPaper = api;
 })(globalThis);

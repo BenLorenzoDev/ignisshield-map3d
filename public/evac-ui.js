@@ -15,10 +15,10 @@ async function initEvac() {
   map.addLayer({id: 'evac-access', type: 'line', source: 'evac-routes', filter: ['get', 'access'],
     paint: {'line-color': '#00e676', 'line-width': 1.2, 'line-opacity': 0.55, 'line-dasharray': [1, 2]}}, 'evac-routes');
   map.addSource('evac-people', {type: 'geojson', data: empty()});
-  map.addLayer({id: 'evac-people', type: 'circle', source: 'evac-people', paint: {
-    'circle-radius': ['interpolate', ['linear'], ['zoom'], 15, ['+', 2, ['sqrt', ['get', 'people']]], 19, ['+', 5, ['*', 1.6, ['sqrt', ['get', 'people']]]]],
-    'circle-color': ['match', ['get', 'state'], 'moving', '#ffffff', 'arrived', '#00c853', 'trapped', '#ff1744', '#9e9e9e'],
-    'circle-stroke-color': ['match', ['get', 'state'], 'moving', '#00a152', '#263238'], 'circle-stroke-width': 2}});
+  for (const [name, img] of personImages()) map.addImage(name, img, {pixelRatio: 2});
+  map.addLayer({id: 'evac-people', type: 'symbol', source: 'evac-people', layout: {
+    'icon-image': ['get', 'icon'], 'icon-anchor': 'bottom', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
+    'icon-size': ['interpolate', ['linear'], ['zoom'], 15, 0.35, 17, 0.6, 19, 1, 21, 1.4], 'symbol-sort-key': ['get', 'order']}});
   map.addSource('safe-areas', {type: 'geojson', data: empty()});
   map.addLayer({id: 'safe-areas', type: 'circle', source: 'safe-areas',
     paint: {'circle-radius': 9, 'circle-color': '#00c853', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2.5}});
@@ -100,14 +100,64 @@ function evacShow(r) {
   eui.summary.hidden = !s;
   evacTick(0);
 }
+// ---------- human figures (drawn once, used as map icons) ----------
+const FIGURE = {moving: ['#ffffff', '#1b2a33'], arrived: ['#00c853', '#0b3d1d'], trapped: ['#ff1744', '#4a0010'], nopath: ['#b0bec5', '#37474f']};
+const POSES = {
+  // [head centre, [limbs as polylines]] on a 28 × 40 box, feet at the bottom
+  runA: [[16, 7], [[[15, 12], [12, 24]], [[12, 24], [17, 30], [21, 37]], [[12, 24], [8, 31], [3, 34]], [[14.5, 14], [19, 19], [23, 16]], [[14.5, 14], [9, 18], [6, 23]]]],
+  runB: [[16, 7], [[[15, 12], [12, 24]], [[12, 24], [14, 31], [10, 38]], [[12, 24], [17, 29], [20, 33]], [[14.5, 14], [10, 19], [7, 16]], [[14.5, 14], [19, 18], [21, 23]]]],
+  stand: [[14, 7], [[[14, 12], [14, 25]], [[14, 25], [11, 38]], [[14, 25], [17, 38]], [[14, 14], [9, 23]], [[14, 14], [19, 23]]]],
+  help: [[14, 8], [[[14, 13], [14, 26]], [[14, 26], [11, 38]], [[14, 26], [17, 38]], [[14, 15], [8, 4]], [[14, 15], [20, 4]]]]
+};
+function drawPerson(pose, [fill, stroke], mirror) {
+  const W = 28, H = 40, k = 2, c = document.createElement('canvas');
+  c.width = W * k; c.height = H * k;
+  const g = c.getContext('2d');
+  g.scale(k, k);
+  if (mirror) { g.translate(W, 0); g.scale(-1, 1); }
+  g.lineCap = g.lineJoin = 'round';
+  const [head, limbs] = POSES[pose];
+  const pass = (color, grow) => {
+    g.strokeStyle = g.fillStyle = color;
+    for (const l of limbs) { g.lineWidth = 3.4 + grow; g.beginPath(); g.moveTo(...l[0]); for (const p of l.slice(1)) g.lineTo(...p); g.stroke(); }
+    g.beginPath(); g.arc(head[0], head[1], 4.3 + grow / 2, 0, Math.PI * 2); g.fill();
+  };
+  pass(stroke, 2.6);  // outline
+  pass(fill, 0);
+  return g.getImageData(0, 0, W * k, H * k);
+}
+function personImages() {
+  const out = [];
+  for (const pose of ['runA', 'runB']) for (const m of [false, true]) out.push([`p-${pose}${m ? '-l' : ''}`, drawPerson(pose, FIGURE.moving, m)]);
+  out.push(['p-arrived', drawPerson('stand', FIGURE.arrived)], ['p-trapped', drawPerson('help', FIGURE.trapped)], ['p-nopath', drawPerson('stand', FIGURE.nopath)]);
+  return out;
+}
+// legend images in the playback bar
+for (const [el, pose, state] of [['moving', 'runA', 'moving'], ['arrived', 'stand', 'arrived'], ['trapped', 'help', 'trapped']]) {
+  const img = drawPerson(pose, FIGURE[state]), c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height; c.getContext('2d').putImageData(img, 0, 0);
+  document.querySelectorAll(`.fig-${el}`).forEach(i => { i.src = c.toDataURL(); });
+}
+// small deterministic scatter so a family does not stand on one spot
+const jitter = (i, k, m) => { const h = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453, u = h - Math.floor(h), v = (h * 7.1) % 1; const r = m * (0.35 + 0.65 * Math.abs(v)), a = u * Math.PI * 2; return [r * Math.cos(a) / 109480, r * Math.sin(a) / 110540]; };
+const FOLLOW = 0.03; // minutes between family members walking in single file (≈ 1.8 s)
+
 /** Called every animation update with the playback minute (fire-ui loop). */
 function evacTick(minute) {
   const on = eui.toggle.checked && evacShown;
   if (!on) { if (evacLastRoutes !== -2) { map.getSource('evac-people')?.setData(empty()); map.getSource('evac-routes')?.setData(empty()); evacLastRoutes = -2; } return; }
   const people = [];
+  const stride = Math.floor((typeof clock === 'number' ? clock : 0) * 6); // legs swap about 3 times a second (real time)
   for (const g of evacShown.groups) {
-    const p = IgnisEvac.positionAt(g, minute);
-    if (p) people.push({type: 'Feature', geometry: {type: 'Point', coordinates: p.at}, properties: {state: p.state, people: g.people}});
+    const shown = Math.min(g.people, 5);
+    for (let k = 0; k < shown; k++) {
+      const p = IgnisEvac.positionAt(g, minute - k * FOLLOW);
+      if (!p) continue;
+      let at = p.at, icon;
+      if (p.state === 'moving') icon = `p-${(stride + k + g.i) % 2 ? 'runB' : 'runA'}${p.dir < 0 ? '-l' : ''}`;
+      else { const [dx, dy] = jitter(g.i, k, p.state === 'arrived' ? 7 : 3); at = [at[0] + dx, at[1] + dy]; icon = `p-${p.state}`; }
+      people.push({type: 'Feature', geometry: {type: 'Point', coordinates: at}, properties: {icon, order: p.state === 'moving' ? 2 : 1}});
+    }
   }
   map.getSource('evac-people').setData({type: 'FeatureCollection', features: people});
   const m = Math.floor(minute);

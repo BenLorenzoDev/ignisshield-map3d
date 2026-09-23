@@ -154,7 +154,8 @@ Every fire run also shows the residents walking to safety (`public/evac.js`, dis
 - **Who leaves:** residents of every building the fire comes within 30 m of leave at that minute, or when their own building catches. People per building = households (X6) × 5, the Baliwagan average (2026 census: 6,141 people in 1,209 households).
 - **Where to:** the quickest reachable safe place. That is either the **main road** (every junction on a trunk, primary, secondary or tertiary road; the paper describes it as cemented and passable) or a **safe area** that editors add in **Routes → Safe areas** (e.g. a covered court). Safe areas are shared by the class.
 - **Route:** the walking network, meaning inventory roads plus the alleys drawn from the GPS walks, with the same travel times as Routes (4.5 km/h, slowed by narrow and crowded streets). Routes avoid every street within 8 m of a building that was already burning when people set off. A safe place stops counting once fire is within 16 m of it.
-- **On the map:**
+- **On the map:** human figures (families walk in single file, up to 5 figures). Playback is a time-lapse: the speed menu goes from real time (true walking pace) to 240× faster, default 30×.
+- **Figures:**
   - **white dots** are walking;
   - **green** reached safety;
   - **red** are cut off (every way out was blocked);

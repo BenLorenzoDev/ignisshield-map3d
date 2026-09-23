@@ -201,6 +201,10 @@ const HELP = {
     what: 'Places where people should gather in a fire: open spaces away from buildings, such as a covered court, plaza or school ground.',
     get: 'Editors click “Add safe area”, then the map. Name each one (e.g. “Baliwagan Covered Court”). Ask the BFP or barangay which places are official.',
     sim: 'Every evacuee walks to the quickest reachable safe area or the main road. A safe area stops counting if the fire gets within 16 m of it. It applies to fires started after it is added.'},
+  speed: {title: 'Playback speed',
+    what: 'How fast the simulated time plays on screen. The simulation itself always uses real minutes; this only changes how quickly you watch it.',
+    get: '“Real time” shows people walking at their true pace (about 1.25 m/s) — a 60-minute fire then takes an hour to watch. 30× shows one simulated minute every 2 seconds, good for following people; 120× or more to see the whole fire spread quickly.',
+    sim: 'The clock shows simulated minutes and seconds and the current speed-up, so a person crossing 100 m in a few seconds on screen is really walking for about a minute and a half.'},
   boundary: {title: 'Only buildings inside the study boundary',
     what: 'Limits the fire to the buildings inside the red dashed line, the study area of Sitio Polo.',
     get: 'Tick it for results about Sitio Polo only. Untick it to let the fire reach every mapped building around.',
@@ -588,6 +592,12 @@ fui.batchRun.addEventListener('change', () => showRun(fui.batchRun.value));
 // model gives it (ignition minute to burned-out minute). Flames and smoke are GPU sprites (fire-gl.js); the ground
 // glow and the red/orange pulse of burning buildings are map layers.
 let displayMinute = 0, clock = 0, lastTs = 0, lastPaint = 0, rafId = null;
+/** Simulated time as mm:ss, and how much faster than real time it plays. */
+function showClock() {
+  if (!run) return;
+  const s = Math.round(displayMinute * 60), end = run.result.frames.at(-1).minute;
+  fui.minute.textContent = `Time ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} of ${end}:00`;
+}
 const SMOKE_MAX = 260; // buildings with smoke at once, to keep the map fast
 
 function prepareEffects(r) {
@@ -663,7 +673,7 @@ function showFrame(k) {
   map.getSource('fire-points').setData({type: 'FeatureCollection', features: points});
   const row = run.result.timeline[k];
   fui.frame.value = k;
-  fui.minute.textContent = `Minute ${minute} of ${frames.at(-1).minute}`;
+  showClock();
   fui.status.textContent = `${row.Burning} burning · ${row.Burned} burned${k === frames.length - 1 ? ` · ${run.result.status}` : ''}`;
   if (k === frames.length - 1) setResults(true);
   paintFire();
@@ -699,7 +709,7 @@ function loop(ts) {
     if (displayMinute >= end) pause();
   }
   fireGL.setClock(displayMinute, clock); // flames and smoke animate every frame on the GPU
-  if (ts - lastPaint > 70) { lastPaint = ts; paintFire(); evacTick(displayMinute); }
+  if (ts - lastPaint > 70) { lastPaint = ts; paintFire(); evacTick(displayMinute); showClock(); }
 }
 
 /** Buildings burning or burned at the minute on screen (for routing around the fire). */

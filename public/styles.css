@@ -241,3 +241,5 @@ button.fire.big { padding: 10px; font-size: 15px; }
 #evac-summary { font-size: 13px; background: #e8f5e9; border-radius: 6px; padding: 6px 8px; }
 .ev-safe { color: #1b5e20; font-weight: 600; } .ev-trapped { color: #b71c1c; font-weight: 600; }
 #safe-list input { font: inherit; padding: 3px 5px; flex: 1; min-width: 0; }
+.fig { width: 11px; height: 16px; vertical-align: -3px; margin-left: 6px; }
+.speed-wrap select { font: inherit; }

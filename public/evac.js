@@ -179,7 +179,7 @@
     let k = 1;
     while (k < t.length - 1 && t[k] < minute) k++;
     const a = g.coords[k - 1], b = g.coords[k], span = t[k] - t[k - 1], f = span > 0 ? (minute - t[k - 1]) / span : 1;
-    return {at: [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], state: 'moving'};
+    return {at: [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], state: 'moving', dir: b[0] >= a[0] ? 1 : -1};
   }
 
   const api = {prepare, positionAt, PEOPLE_PER_HOUSEHOLD};

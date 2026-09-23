@@ -182,6 +182,7 @@ map.on('load', async () => {
   map.addSource('study', {type: 'geojson', data});
   map.addLayer({id: 'study-3d', type: 'fill-extrusion', source: 'study', filter: isBuilding,
     paint: {'fill-extrusion-color': '#e8793a', 'fill-extrusion-height': 6, 'fill-extrusion-opacity': 0.9}});
+  map.addLayer({id: 'study-2d-fill', type: 'fill', source: 'study', filter: isBuilding, paint: {'fill-color': '#e8793a', 'fill-opacity': 0.01}}); // for clicks inside the outline
   map.addLayer({id: 'study-2d', type: 'line', source: 'study', filter: isBuilding,
     paint: {'line-color': '#e8793a', 'line-width': 2}});
   map.addLayer({id: 'study-boundary', type: 'line', source: 'study',
@@ -255,6 +256,7 @@ function applyLayers() {
   const show = (id, on) => map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
   show('study-3d', is3d && ui.showInventory.checked);
   show('study-2d', !is3d && ui.showInventory.checked);
+  show('study-2d-fill', !is3d && ui.showInventory.checked);
   for (const id of ['buildings-3d', 'edit-3d', 'flames-3d']) show(id, is3d);
   for (const id of ['buildings-2d', 'buildings-2d-line', 'edit-fill', 'edit-line', 'edit-mid', 'edit-vertex', 'flames-2d']) show(id, !is3d);
   // The selected building is drawn from the edit source, so leave it out of the main layers
@@ -463,6 +465,9 @@ map.on('click', e => {
   if (selectedId && map.queryRenderedFeatures(e.point, {layers: editLayers}).length) return;
   const layers = view === '3d' ? ['buildings-3d'] : ['buildings-2d'];
   const hit = map.queryRenderedFeatures(e.point, {layers})[0];
+  if (!hit && ui.showInventory.checked && map.queryRenderedFeatures(e.point, {layers: view === '3d' ? ['study-3d'] : ['study-2d-fill']}).length) {
+    showHint('That orange outline is the old IgnisShield inventory, shown for reference only. It is not part of the shared map and cannot be edited. Untick Inventory to hide it.', 7000);
+  }
   select(hit ? hit.properties.id : null);
 });
 

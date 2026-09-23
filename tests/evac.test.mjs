@@ -56,4 +56,31 @@ test('position moves along the route over time', () => {
   assert.equal(E.positionAt(g, (g.depart + g.arrive) / 2).state, 'moving');
   assert.equal(E.positionAt(g, g.arrive + 1).state, 'arrived');
 });
+test('people choose the way that leads away from the fire, even if it is longer', () => {
+  // house 1, 35 m off the southern lane, has been burning since minute 0; house 0 catches at minute 1 and its family leaves
+  const feats = [house(-10, 0), house(100, -35)];
+  const ev = E.prepare({features: feats, densities: [0, 0], households: [1, 1], roads}).evaluate(frames([[0, 1], [1, 1], [1, 1]]));
+  const g = ev.groups.find(x => x.i === 0);
+  assert.equal(g.status, 'safe');
+  assert.ok(g.coords.some(c => Math.abs(c[1] - at(0, 60)[1]) < 1e-7), 'goes north, away from the burning southern lane');
+});
+test('when the fire blocks the street ahead, people turn back and take another way', () => {
+  // house 0 leaves at minute 0 down the southern lane; at minute 1 a house further along that lane catches fire
+  const feats = [house(-22, 0), house(170, -9)]; // home 18 m from the junction, so turning back past it stays clear
+  const ev = E.prepare({features: feats, densities: [0, 0], households: [1, 1], roads}).evaluate(frames([[1, 0], [1, 1], [1, 1], [1, 1]]));
+  const g = ev.groups.find(x => x.i === 0);
+  assert.equal(g.status, 'safe');
+  assert.ok(g.replans >= 1, 're-planned');
+  assert.ok(g.coords.some(c => Math.abs(c[1] - at(0, 60)[1]) < 1e-7), 'ends up on the northern lane');
+});
+test('people never step across water to reach a street', () => {
+  // a pond between house 0 and every street except the far ones
+  const pond = [[at(-30, -15), at(30, -15), at(30, 15), at(-30, 15), at(-30, -15)]];
+  const feats = [house(-45, 0)];
+  const dry = E.prepare({features: feats, densities: [0], households: [1], roads}).evaluate(frames([[1]]));
+  const wet = E.prepare({features: feats, densities: [0], households: [1], roads, water: [pond]}).evaluate(frames([[1]]));
+  assert.equal(dry.groups[0].status, 'safe');
+  assert.ok(wet.groups[0].status !== 'safe' || wet.groups[0].coords[1][0] < at(-30, 0)[0] || Math.abs(wet.groups[0].coords[1][1] - at(0, 0)[1]) > 15 / 110540,
+    'does not step across the pond');
+});
 console.log(`All ${n} evacuation tests passed.`);

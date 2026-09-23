@@ -263,3 +263,4 @@ button.fire.big { padding: 10px; font-size: 15px; }
 @media (min-width: 1025px) {
   body.legend-open #playback { left: calc(354px + (100% - 354px) / 2); width: min(760px, calc(100% - 378px)); }
 }
+.ln-bridge { border-top: 6px solid #6d4c41; opacity: .7; }

@@ -39,7 +39,7 @@
    * One-time preparation for a set of buildings (all runs of a batch share it).
    * features, densities[i] (model coverage 0–1), households[i] (X6); roads, paths; safePoints [{lonlat, name}].
    */
-  function prepare({features, densities, households, roads, paths = [], safePoints = [], warnM = 30, clearance = 8, speedKmh = 4.5, maxStartM = 80}) {
+  function prepare({features, densities, households, roads, paths = [], safePoints = [], water = [], warnM = 30, clearance = 8, speedKmh = 4.5, maxStartM = 80}) {
     const network = R.prepareNetwork(roads, paths);
     const base = R.buildGraph(network, features.map((f, i) => ({feature: f, bldg_dens: densities[i]})), [], {mode: 'Walking', speed: speedKmh});
     const speedMpm = speedKmh * 1000 / 60;
@@ -58,18 +58,37 @@
     const within = (pm, d) => near(pm, d + 25).filter(i => dist(B[i].cm, pm) <= d + B[i].rad);
 
     // Which buildings block each street segment (sampled every 4 m) and each junction
-    const edgeNear = new Map();
+    const edgeNear = new Map(), edgeNearAt = new Map(); // buildings beside each street, and where along it (0..1)
     for (const [id, f] of base.edges) {
-      const line = lineOf(f.geometry).map(toM), set = new Set();
+      const line = lineOf(f.geometry).map(toM), at = new Map();
+      let total = 0;
+      for (let k = 0; k < line.length - 1; k++) total += dist(line[k], line[k + 1]);
+      let run = 0;
       for (let k = 0; k < line.length - 1; k++) {
         const L = dist(line[k], line[k + 1]), steps = Math.max(1, Math.ceil(L / 4));
         for (let s = 0; s <= steps; s++) {
           const t = s / steps, p = [line[k][0] + (line[k + 1][0] - line[k][0]) * t, line[k][1] + (line[k + 1][1] - line[k][1]) * t];
-          for (const i of within(p, clearance)) set.add(i);
+          const frac = total ? (run + t * L) / total : 0;
+          for (const i of within(p, clearance)) { if (!at.has(i)) at.set(i, []); at.get(i).push(frac); }
+        }
+        run += L;
+      }
+      edgeNear.set(id, [...at.keys()]);
+      edgeNearAt.set(id, [...at].map(([i, fr]) => [i, Math.min(...fr), Math.max(...fr)]));
+    }
+    const edgeWarm = new Map();
+    for (const [id, f] of base.edges) {
+      const line = lineOf(f.geometry).map(toM), set = new Set();
+      for (let k = 0; k < line.length - 1; k++) {
+        const L = dist(line[k], line[k + 1]), steps = Math.max(1, Math.ceil(L / 10));
+        for (let s = 0; s <= steps; s++) {
+          const t = s / steps;
+          for (const i of within([line[k][0] + (line[k + 1][0] - line[k][0]) * t, line[k][1] + (line[k + 1][1] - line[k][1]) * t], warnM)) set.add(i);
         }
       }
-      edgeNear.set(id, [...set]);
+      edgeWarm.set(id, [...set]);
     }
+    const HEAT = 5; // streets within warnM of the fire count 5x longer when choosing a way out
     const nodeM = new Map([...base.coords].map(([id, c]) => [id, toM(c.lonlat)]));
     const nodeNear = new Map([...nodeM].map(([id, m]) => [id, within(m, clearance * 2)]));
 
@@ -107,13 +126,33 @@
           }
       }
     }
+    // Water (sea, river, ponds) in metres, with bounding boxes. water = array of polygons (arrays of rings)
+    const W = water.map(poly => {
+      const rings = poly.map(ring => ring.map(toM)), xs = rings[0].map(p => p[0]), ys = rings[0].map(p => p[1]);
+      return {rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]};
+    });
+    const inRing = (p, ring) => {
+      let c = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i], [xj, yj] = ring[j];
+        if ((yi > p[1]) !== (yj > p[1]) && p[0] < (xj - xi) * (p[1] - yi) / (yj - yi) + xi) c = !c;
+      }
+      return c;
+    };
+    const inWater = p => W.some(w => p[0] >= w.box[0] && p[0] <= w.box[2] && p[1] >= w.box[1] && p[1] <= w.box[3]
+      && inRing(p, w.rings[0]) && !w.rings.slice(1).some(h => inRing(p, h)));
+    const crossesWater = (a, b) => {
+      const n = Math.max(2, Math.ceil(dist(a, b) / 3));
+      for (let s = 1; s < n; s++) { const t = s / n; if (inWater([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])) return true; }
+      return false;
+    };
     const starts = B.map(b => {
       const best = new Map(), n = Math.ceil(maxStartM / SEG), gx = Math.floor(b.cm[0] / SEG), gy = Math.floor(b.cm[1] / SEG);
       for (let dx = -n; dx <= n; dx++) for (let dy = -n; dy <= n; dy++) for (const [m, k] of segGrid.get((gx + dx) + "," + (gy + dy)) || []) {
         const a = m.lm[k], c = m.lm[k + 1], vx = c[0] - a[0], vy = c[1] - a[1], L = vx * vx + vy * vy;
         const t = L ? Math.max(0, Math.min(1, ((b.cm[0] - a[0]) * vx + (b.cm[1] - a[1]) * vy) / L)) : 0;
         const q = [a[0] + t * vx, a[1] + t * vy], d = dist(q, b.cm);
-        if (d <= maxStartM && (!best.has(m.e) || d < best.get(m.e).d)) best.set(m.e, {m, k, t, d, at: m.cum[k] + t * Math.sqrt(L)});
+        if (d <= maxStartM && (!best.has(m.e) || d < best.get(m.e).d) && !crossesWater(b.cm, q)) best.set(m.e, {m, k, t, d, at: m.cum[k] + t * Math.sqrt(L)});
       }
       return [...best.values()].sort((x, y) => x.d - y.d); // every street within reach: the nearest may be blocked by fire
     });
@@ -135,12 +174,16 @@
         if (ig[j] === Infinity) continue;
         for (const i of within(B[j].cm, warnM)) if (dist(B[i].cm, B[j].cm) <= warnM + B[i].rad && ig[j] < depart[i]) depart[i] = ig[j];
       }
-      const trees = new Map(); // departure minute -> shortest-path tree toward the nearest safe place
+      // What people know at minute m: where the fire is now. Streets beside burning buildings are impassable; streets
+      // within warnM of the fire are avoided (HEAT x the cost) so people head away from it, not past it.
+      const trees = new Map();
       const treeAt = m => {
         if (trees.has(m)) return trees.get(m);
-        const burnt = i => ig[i] < m; // fires that started before people set off (they run out as their own house catches)
+        const burnt = i => ig[i] < m; // fires that started before this minute (people run out as their own house catches)
         const blocked = new Set([...edgeNear].filter(([, list]) => list.some(burnt)).map(([e]) => e));
+        const hot = new Set([...edgeWarm].filter(([, list]) => list.some(burnt)).map(([e]) => e));
         const unsafe = id => nodeNear.get(id).some(burnt);
+        const cost = e => (hot.has(e) ? HEAT : 1);
         const d = new Map(), next = new Map(), heap = new Heap();
         for (const [s] of safe) if (!unsafe(s)) { d.set(s, 0); heap.push([0, s]); }
         while (heap.size) {
@@ -148,45 +191,16 @@
           if (du > d.get(u)) continue;
           for (const [v, w, , e] of base.graph.adj.get(u)) {
             if (blocked.has(e)) continue;
-            const nd = du + w;
+            const nd = du + w * cost(e);
             if (nd < (d.get(v) ?? Infinity)) { d.set(v, nd); next.set(v, [u, e]); heap.push([nd, v]); }
           }
         }
-        const t = {d, next, unsafe, blocked};
+        const t = {d, next, unsafe, blocked, cost};
         trees.set(m, t);
         return t;
       };
-      const groups = [];
-      for (let i = 0; i < n; i++) {
-        if (depart[i] === Infinity) continue;
-        const people = Math.max(1, households[i]) * PEOPLE_PER_HOUSEHOLD, t0 = depart[i], home = B[i].c;
-        if (!starts[i].length) { groups.push({i, people, depart: t0, status: 'nopath', coords: [home], times: [t0]}); continue; }
-        const tree = treeAt(t0);
-        // step out onto the nearest usable street or alley, then walk along it to one of its ends
-        let pick = null;
-        for (const st of starts[i]) {
-          if (tree.blocked.has(st.m.e)) continue;
-          const w = weightOf(st.m.from, st.m.to, st.m.e), frac = st.m.total ? st.at / st.m.total : 0;
-          for (const [end, part] of [[st.m.from, frac], [st.m.to, 1 - frac]]) {
-            if (!tree.d.has(end) || tree.unsafe(end)) continue;
-            const cost = st.d * ACCESS_SLOWDOWN / speedMpm + w * part + tree.d.get(end);
-            if (!pick || cost < pick.cost) pick = {cost, st, end, w: w * part};
-          }
-        }
-        if (!pick) { groups.push({i, people, depart: t0, status: 'trapped', coords: [home], times: [t0]}); continue; }
-        // walk: home -> doorstep on the street -> end of that street -> ... -> safe place, with a time on every point
-        const {st, end} = pick, door = st.m.line[st.k].map((v, j) => v + (st.m.line[st.k + 1][j] - v) * st.t);
-        let t = t0 + st.d * ACCESS_SLOWDOWN / speedMpm;
-        const coords = [home, door], times = [t0, t];
-        const along = end === st.m.from ? st.m.line.slice(0, st.k + 1).reverse() : st.m.line.slice(st.k + 1);
-        let prev = door, acc = 0;
-        const partLen = end === st.m.from ? st.at : st.m.total - st.at;
-        for (const c of along) {
-          acc += dist(toM(prev), toM(c)); prev = c;
-          coords.push(c); times.push(t + (partLen ? pick.w * Math.min(1, acc / partLen) : pick.w));
-        }
-        t += pick.w;
-        let node = end;
+      /** Follow the tree from `node` at time t: coordinates, times and the street steps taken. */
+      const follow = (node, t, tree, coords, times, steps) => {
         while (tree.next.has(node)) {
           const [u, e] = tree.next.get(node), w = weightOf(node, u, e), line = edgeLine(e, node);
           let total = 0;
@@ -196,10 +210,99 @@
             acc += dist(toM(line[k - 1]), toM(line[k]));
             coords.push(line[k]); times.push(t + (total ? w * acc / total : w));
           }
+          const fwd = String(base.edges.get(e).properties.from_node) === node;
+          steps.push({e, from: node, to: u, t0: t, t1: t + w, f0: fwd ? 0 : 1, f1: fwd ? 1 : 0});
           t += w;
           node = u;
         }
-        groups.push({i, people, depart: t0, arrive: t, status: 'safe', to: safe.get(node), coords, times});
+        return {node, t};
+      };
+      /** Cut a route at minute k: keep everything walked so far and return the position. */
+      const cutAt = (coords, times, k) => {
+        let j = 1;
+        while (j < times.length && times[j] <= k) j++;
+        if (j >= times.length) return coords[coords.length - 1];
+        const a = coords[j - 1], b = coords[j], span = times[j] - times[j - 1], f = span > 0 ? (k - times[j - 1]) / span : 1;
+        const p = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+        coords.length = j; times.length = j;
+        coords.push(p); times.push(k);
+        return p;
+      };
+      const groups = [];
+      for (let i = 0; i < n; i++) {
+        if (depart[i] === Infinity) continue;
+        const people = Math.max(1, households[i]) * PEOPLE_PER_HOUSEHOLD, t0 = depart[i], home = B[i].c;
+        if (!starts[i].length) { groups.push({i, people, depart: t0, status: 'nopath', coords: [home], times: [t0]}); continue; }
+        let tree = treeAt(t0);
+        // step out onto the nearest usable street or alley (never across water), then along it to one of its ends
+        let pick = null;
+        // the way from the door must keep clear of every other house already alight (including ones catching now)
+        const legClear = st => {
+          const a = st.m.lm[st.k], b = st.m.lm[st.k + 1], q = [a[0] + (b[0] - a[0]) * st.t, a[1] + (b[1] - a[1]) * st.t];
+          const n = Math.max(2, Math.ceil(st.d / 4));
+          for (let s = 1; s <= n; s++) {
+            const f = s / n, p = [B[i].cm[0] + (q[0] - B[i].cm[0]) * f, B[i].cm[1] + (q[1] - B[i].cm[1]) * f];
+            if (within(p, clearance).some(j => j !== i && ig[j] <= t0)) return false;
+          }
+          return true;
+        };
+        for (const st of starts[i]) {
+          if (tree.blocked.has(st.m.e) || !legClear(st)) continue;
+          const w = weightOf(st.m.from, st.m.to, st.m.e), frac = st.m.total ? st.at / st.m.total : 0;
+          for (const [end, part] of [[st.m.from, frac], [st.m.to, 1 - frac]]) {
+            if (!tree.d.has(end) || tree.unsafe(end)) continue;
+            const cost = st.d * ACCESS_SLOWDOWN / speedMpm + w * part * tree.cost(st.m.e) + tree.d.get(end);
+            if (!pick || cost < pick.cost) pick = {cost, st, end, w: w * part};
+          }
+        }
+        if (!pick) { groups.push({i, people, depart: t0, status: 'trapped', coords: [home], times: [t0]}); continue; }
+        const {st, end} = pick, door = st.m.line[st.k].map((v, j) => v + (st.m.line[st.k + 1][j] - v) * st.t);
+        let t = t0 + st.d * ACCESS_SLOWDOWN / speedMpm;
+        const coords = [home, door], times = [t0, t];
+        const along = end === st.m.from ? st.m.line.slice(0, st.k + 1).reverse() : st.m.line.slice(st.k + 1);
+        const partLen = end === st.m.from ? st.at : st.m.total - st.at;
+        let prev = door, acc = 0;
+        for (const c of along) {
+          acc += dist(toM(prev), toM(c)); prev = c;
+          coords.push(c); times.push(t + (partLen ? pick.w * Math.min(1, acc / partLen) : pick.w));
+        }
+        const doorFrac = st.m.total ? st.at / st.m.total : 0;
+        const steps = [{e: st.m.e, from: end === st.m.from ? st.m.to : st.m.from, to: end, t0: t, t1: t + pick.w, door: true, f0: doorFrac, f1: end === st.m.from ? 0 : 1}];
+        t += pick.w;
+        let arrived = follow(end, t, tree, coords, times, steps), status = 'safe', replans = 0;
+        // Every minute on the way: if the fire now blocks a street still ahead, turn back or take another way
+        const burntBy = k => i => ig[i] < k;
+        // is there fire beside street e between positions a and b (0..1 along it)?
+        const fireBetween = (e, a, b, k) => {
+          const lo = Math.min(a, b) - 0.02, hi = Math.max(a, b) + 0.02, burnt = burntBy(k);
+          return edgeNearAt.get(e).some(([i, f0, f1]) => burnt(i) && f1 >= lo && f0 <= hi);
+        };
+        for (let k = Math.floor(t0) + 1; k < arrived.t && replans < 8; k++) {
+          const tk = treeAt(k), ahead = steps.filter(s => s.t1 > k);
+          if (!ahead.length) break;
+          const cur = ahead[0], p = Math.max(0, Math.min(1, (k - cur.t0) / ((cur.t1 - cur.t0) || 1)));
+          const pos = cur.f0 + (cur.f1 - cur.f0) * p;
+          const blockedAhead = fireBetween(cur.e, pos, cur.f1, k) || ahead.slice(1).some(s => tk.blocked.has(s.e));
+          if (!blockedAhead) continue;
+          replans++;
+          const here = cutAt(coords, times, k), hm = toM(here);
+          const options = [];
+          if (!fireBetween(cur.e, pos, cur.f1, k)) options.push(cur.to);
+          if (!cur.door && !fireBetween(cur.e, pos, cur.f0, k)) options.push(cur.from);
+          let best = null;
+          for (const node of options) {
+            if (!tk.d.has(node) || tk.unsafe(node)) continue;
+            const walk = dist(hm, nodeM.get(node)) / speedMpm, cost = walk + tk.d.get(node);
+            if (!best || cost < best.cost) best = {node, walk, cost};
+          }
+          if (!best) { status = 'trapped'; arrived = {node: null, t: k}; break; }
+          coords.push(base.coords.get(best.node).lonlat); times.push(k + best.walk);
+          steps.length = 0;
+          arrived = follow(best.node, k + best.walk, tk, coords, times, steps);
+          tree = tk;
+        }
+        if (status === 'trapped') groups.push({i, people, depart: t0, status, coords, times, replans});
+        else groups.push({i, people, depart: t0, arrive: arrived.t, status, to: safe.get(arrived.node), coords, times, replans});
       }
       const sum = (arr, f) => arr.reduce((s, g) => s + f(g), 0);
       const ok = groups.filter(g => g.status === 'safe'), okPeople = sum(ok, g => g.people);
@@ -215,13 +318,21 @@
         }
       };
     }
-    return {evaluate, safeNodes: [...safe].map(([id, label]) => ({lonlat: base.coords.get(id).lonlat, label})), areas};
+    const bridges = [...base.edges].filter(([, f]) => {
+      const l = lineOf(f.geometry).map(toM);
+      return l.some((p, k) => k && crossesWater(l[k - 1], p));
+    }).map(([, f]) => lineOf(f.geometry));
+    return {evaluate, bridges, safeNodes: [...safe].map(([id, label]) => ({lonlat: base.coords.get(id).lonlat, label})), areas};
   }
 
   /** Where an evacuee group is at `minute`: null before leaving, else [lon, lat] and state. */
   function positionAt(g, minute) {
     if (minute < g.depart) return null;
-    if (g.status !== 'safe') return {at: g.coords[0], state: g.status};
+    if (g.status !== 'safe') {
+      const end = g.times[g.times.length - 1];
+      if (g.coords.length < 2 || minute >= end) return {at: g.coords[g.coords.length - 1], state: g.status};
+      return {...positionAt({...g, status: 'safe', arrive: end}, minute), state: 'moving'};
+    }
     if (minute >= g.arrive) return {at: g.coords[g.coords.length - 1], state: 'arrived'};
     const t = g.times;
     let k = 1;

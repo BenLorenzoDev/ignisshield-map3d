@@ -6,8 +6,16 @@ let safeAreas = [];
 let safePicking = false;
 let evacShown = null;      // evacuation result on screen
 let evacLastRoutes = -1;   // minute whose routes are drawn
+let waterPolys = [];       // sea, river and ponds (OpenStreetMap): nobody walks across them
 
 async function initEvac() {
+  try {
+    const w = await (await fetch('data/water.geojson')).json();
+    waterPolys = w.features.filter(f => f.properties.kind === 'water').flatMap(f => (f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates));
+    map.addSource('bridges', {type: 'geojson', data: {type: 'FeatureCollection', features: w.features.filter(f => f.properties.kind === 'bridge')}});
+    map.addLayer({id: 'bridges', type: 'line', source: 'bridges', layout: {'line-cap': 'butt'},
+      paint: {'line-color': '#6d4c41', 'line-width': ['interpolate', ['linear'], ['zoom'], 15, 4, 19, 12], 'line-opacity': 0.55}}, 'roads');
+  } catch { /* evacuation still works, without the water check */ }
   map.addSource('evac-routes', {type: 'geojson', data: empty()});
   map.addLayer({id: 'evac-routes', type: 'line', source: 'evac-routes', layout: {'line-cap': 'round', 'line-join': 'round'},
     filter: ['!', ['get', 'access']], paint: {'line-color': '#00e676', 'line-width': ['interpolate', ['linear'], ['zoom'], 15, 1.5, 19, 4], 'line-opacity': 0.75}});
@@ -83,7 +91,7 @@ function safeClick(e) {
 /** Evacuation calculator for a batch of runs (null if the network is not ready). */
 function prepareEvac(features, inputs, households) {
   try {
-    return IgnisEvac.prepare({features, densities: inputs.map(m => m.bldg_dens), households, roads, paths: fieldPaths(), safePoints: safeAreas});
+    return IgnisEvac.prepare({features, densities: inputs.map(m => m.bldg_dens), households, roads, paths: fieldPaths(), safePoints: safeAreas, water: waterPolys});
   } catch (err) {
     showHint(`Evacuation routes could not be worked out: ${err.message}`, 8000);
     return null;

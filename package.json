@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "vendor": "node scripts/vendor.mjs",
-    "test": "node tests/paper.test.mjs && node tests/parity.mjs && node tests/routing-parity.mjs",
+    "test": "node tests/paper.test.mjs && node tests/network.test.mjs && node tests/field.test.mjs && node tests/parity.mjs && node tests/routing-parity.mjs",
     "test:paper": "node tests/paper.test.mjs",
     "test:parity": "node tests/parity.mjs",
     "test:routing": "node tests/routing-parity.mjs"

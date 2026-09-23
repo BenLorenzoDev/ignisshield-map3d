@@ -286,7 +286,88 @@
     return {baseline, optimized, saved_minutes: Math.max(0, baseline.minutes - optimized.minutes), method, excluded};
   }
 
-  const api = {Network, optimizeVisitOrder, buildGraph, route};
+  /**
+   * Join field-surveyed paths to the road network. A path end within `nodeM` metres of a junction uses that junction;
+   * otherwise it gets its own junction, and if it lies on another road or path (within `lineM` metres) that line is
+   * split there (a T-junction). Paths become road features: width_m -> alley_wd, walkable, fire-engine access only for
+   * 'vehicle'. Roads without paths come back unchanged, so routing matches IgnisShield-Web when there are no paths.
+   */
+  function prepareNetwork(roads, paths, {nodeM = 2.5, lineM = 3} = {}) {
+    const K = [111320 * Math.cos(10.51 * Math.PI / 180), 110540]; // metres per degree at Sitio Polo
+    const dist = (a, b) => Math.hypot((a[0] - b[0]) * K[0], (a[1] - b[1]) * K[1]);
+    const project = (p, a, b) => {
+      const ax = (b[0] - a[0]) * K[0], ay = (b[1] - a[1]) * K[1], px = (p[0] - a[0]) * K[0], py = (p[1] - a[1]) * K[1];
+      const L = ax * ax + ay * ay, t = L ? Math.max(0, Math.min(1, (px * ax + py * ay) / L)) : 0;
+      return {t, d: Math.hypot(px - t * ax, py - t * ay), pt: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]};
+    };
+    const lines = roads.map(f => ({f, coords: lineOf(f.geometry).map(c => c.slice()), from: String(f.properties.from_node), to: String(f.properties.to_node), splits: []}));
+    const nodes = new Map(), roadNodes = new Set();
+    for (const l of lines) { nodes.set(l.from, l.coords[0]); nodes.set(l.to, l.coords[l.coords.length - 1]); roadNodes.add(l.from); roadNodes.add(l.to); }
+    const pathLines = paths.filter(p => p.geometry?.coordinates?.length >= 2).map(p => ({
+      coords: p.geometry.coordinates.map(c => c.slice()), splits: [],
+      f: {type: 'Feature', geometry: p.geometry, properties: {id: String(p.properties.id), kind: 'road', source: 'field survey',
+        alley_wd: p.properties.width_m, walk_ok: 1, access_ok: p.properties.access === 'vehicle' ? 1 : 0, oneway: 0}}
+    }));
+    const nearest = pt => {
+      let best = null, bd = nodeM;
+      for (const [id, c] of nodes) { const d = dist(pt, c); if (d <= bd) { bd = d; best = id; } }
+      return best;
+    };
+    // Pass 1: each path end joins a nearby junction or becomes a new one (path ends also join each other)
+    const fresh = [];
+    for (const pl of pathLines) {
+      for (const [end, idx] of [['a', 0], ['b', pl.coords.length - 1]]) {
+        let node = nearest(pl.coords[idx]);
+        if (!node) { node = `p:${pl.f.properties.id}:${end}`; nodes.set(node, pl.coords[idx]); fresh.push({pl, idx, node}); }
+        pl.coords[idx] = nodes.get(node).slice();
+        if (end === 'a') pl.from = node; else pl.to = node;
+      }
+    }
+    // Pass 2: a new junction lying along another line splits that line there
+    const all = [...lines, ...pathLines];
+    for (const {pl, node} of fresh) {
+      const pt = nodes.get(node);
+      let best = null;
+      for (const l of all) {
+        if (l === pl) continue;
+        for (let i = 0; i < l.coords.length - 1; i++) {
+          const pr = project(pt, l.coords[i], l.coords[i + 1]);
+          if (pr.d <= lineM && (!best || pr.d < best.d)) best = {l, i, ...pr};
+        }
+      }
+      if (!best) continue;
+      const {l} = best, first = l.coords[0], last = l.coords[l.coords.length - 1];
+      if (dist(best.pt, first) <= nodeM || dist(best.pt, last) <= nodeM) continue; // at that line's own end: pass 1 handles it
+      nodes.set(node, best.pt);
+      for (const x of pathLines) for (const idx of [0, x.coords.length - 1]) if ((idx === 0 ? x.from : x.to) === node) x.coords[idx] = best.pt.slice();
+      l.splits.push({seg: best.i, t: best.t, pt: best.pt, node});
+    }
+    // Cut each split line into pieces joined at the new junctions
+    const out = [];
+    for (const l of all) {
+      const id = String(l.f.properties.id);
+      if (!l.splits.length) {
+        const isRoad = !pathLines.includes(l);
+        out.push(isRoad ? l.f // untouched inventory road
+          : {...l.f, geometry: {type: 'LineString', coordinates: l.coords}, properties: {...l.f.properties, from_node: l.from, to_node: l.to}});
+        continue;
+      }
+      const cuts = l.splits.sort((a, b) => a.seg - b.seg || a.t - b.t).filter((s, i, arr) => !i || s.node !== arr[i - 1].node);
+      let start = l.from, piece = [l.coords[0]], seg = 0, k = 0;
+      for (const s of cuts) {
+        for (; seg < s.seg; seg++) piece.push(l.coords[seg + 1]);
+        piece.push(s.pt);
+        out.push({...l.f, geometry: {type: 'LineString', coordinates: piece}, properties: {...l.f.properties, id: `${id}~${++k}`, from_node: start, to_node: s.node}});
+        start = s.node;
+        piece = [s.pt];
+      }
+      for (; seg < l.coords.length - 1; seg++) piece.push(l.coords[seg + 1]);
+      out.push({...l.f, geometry: {type: 'LineString', coordinates: piece}, properties: {...l.f.properties, id: `${id}~${++k}`, from_node: start, to_node: l.to}});
+    }
+    return out;
+  }
+
+  const api = {Network, optimizeVisitOrder, buildGraph, route, prepareNetwork};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.IgnisRouting = api;
 })(globalThis);

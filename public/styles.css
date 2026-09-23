@@ -78,3 +78,15 @@ hr { border: 0; border-top: 1px solid #e3e6e8; margin: 4px 0; width: 100%; }
 .live .row > * { flex: 1 1 100%; }
 #wx-hour { width: 100%; }
 #imagery { font: inherit; border: 0; border-left: 1px solid #ddd; padding: 0 6px; background: transparent; }
+#path-panel { position: absolute; top: 60px; left: 12px; padding: 10px 12px; display: grid; gap: 6px; width: 240px;
+  background: rgba(255,255,255,.95); border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+#path-panel input, #path-panel select { font: inherit; padding: 4px; width: 100%; box-sizing: border-box; }
+.track-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 2px 0; }
+.track-row button { padding: 2px 8px; background: #fdecea; color: #b3261e; border-radius: 3px; }
+.file-btn { display: inline-block; background: #2d7ff9; color: #fff; border-radius: 4px; padding: 6px 12px; cursor: pointer; text-align: center; }
+/* Panels and hints sit below the toolbar, however many lines it wraps to (--toolbar-bottom is set by app.js) */
+#panel, #path-panel, .side, #scenario { top: calc(var(--toolbar-bottom, 52px) + 8px); }
+#hint { top: calc(var(--toolbar-bottom, 52px) + 8px); }
+#panel, #path-panel { max-height: calc(100% - var(--toolbar-bottom, 52px) - 140px); overflow-y: auto; }
+.side { max-height: calc(100% - var(--toolbar-bottom, 52px) - 170px); }
+body.loading #toolbar button, body.loading #toolbar input, body.loading #toolbar select { pointer-events: none; opacity: .55; }

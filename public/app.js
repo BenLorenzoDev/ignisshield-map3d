@@ -34,6 +34,10 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl({visualizePitch: true}));
 map.addControl(new maplibregl.ScaleControl());
 
+// Keep panels below the toolbar when it wraps onto more lines
+const toolbarEl = document.querySelector('#toolbar');
+new ResizeObserver(() => document.documentElement.style.setProperty('--toolbar-bottom', `${toolbarEl.getBoundingClientRect().bottom}px`)).observe(toolbarEl);
+
 const EDIT_HINT = 'Drag a yellow corner to move it. Drag a white dot to add a corner. Click a corner, then press Delete to remove it. Drag inside the shape to move the whole building.';
 const $ = s => document.querySelector(s);
 const ui = {
@@ -123,7 +127,8 @@ async function startShared() {
   store.features = features;
   synced.clear();
   for (const f of features) synced.set(f.properties.id, rowJson(f));
-  cloud.subscribe({building: applyRemote, run: row => onRemoteRun(row), setting: row => onRemoteSetting(row)});
+  cloud.subscribe({building: applyRemote, run: row => onRemoteRun(row), setting: row => onRemoteSetting(row),
+    path: (row, oldId) => onRemotePath(row, oldId), track: (row, oldId) => onRemoteTrack(row, oldId)});
   await loadSharedData();
 }
 /** A building changed by someone else (or the echo of our own save). */
@@ -250,13 +255,18 @@ map.on('load', async () => {
 
   ui.count.textContent = store.features.length;
   initRoutes(data);
+  initField();
+  document.body.classList.remove('loading'); // toolbar usable once every layer exists
   applyLayers();
 });
 
 // ---------- what is shown ----------
 function applyLayers() {
   const is3d = view === '3d';
-  const show = (id, on) => map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+  const show = (id, on) => {
+    try { map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'); }
+    catch { map.once('idle', applyLayers); } // map busy (e.g. still loading): try again when it settles
+  };
   show('study-3d', is3d && ui.showInventory.checked);
   show('study-2d', !is3d && ui.showInventory.checked);
   show('study-2d-fill', !is3d && ui.showInventory.checked);
@@ -289,6 +299,7 @@ function setView(next, camera = {}) {
 // ---------- tracing ----------
 function startTrace() {
   if (!requireEdit()) return;
+  stopPathDraw();
   select(null);
   const camera = map.getZoom() < 18 ? {zoom: 18.5} : {}; // roofs are too small to trace further out
   if (view !== '2d') setView('2d', camera);
@@ -341,6 +352,7 @@ function showHint(text, hideAfterMs) {
 
 // ---------- selecting and editing ----------
 function select(id) {
+  if (id) selectPath(null);
   selectedId = id;
   selectedVertex = null;
   const f = selected();
@@ -458,6 +470,7 @@ map.on('mouseup', () => {
 
 map.on('click', e => {
   if (routeClick(e)) return;
+  if (fieldClick(e)) return;
   if (drawing) {
     if (nearFirst(e.point)) return finishTrace();
     drawing.push([e.lngLat.lng, e.lngLat.lat]);

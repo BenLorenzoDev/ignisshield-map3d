@@ -69,7 +69,9 @@ function rebuild() {
     const features = runBuildings();
     const inputs = modelInputs(features);
     const hazards = rui.avoid.checked ? fireAffectedNow() : [];
-    net = IgnisRouting.buildGraph(roads, features.map((f, i) => ({feature: f, bldg_dens: inputs[i].bldg_dens})), hazards, settings());
+    // Inventory roads plus the paths students surveyed, joined at their junctions
+    const network = IgnisRouting.prepareNetwork(roads, fieldPaths());
+    net = IgnisRouting.buildGraph(network, features.map((f, i) => ({feature: f, bldg_dens: inputs[i].bldg_dens})), hazards, settings());
     const ex = net.excluded;
     rui.usable.textContent = `${net.graph.adj.size} usable junctions. Road segments left out: ${ex.width} too narrow, ${ex.access} no access for this mode, ${ex.fire} within the fire clearance${hazards.length ? ` (${hazards.length} buildings affected at the minute on screen)` : ''}.`;
     map.getSource('route-nodes').setData({type: 'FeatureCollection', features: [...net.coords].map(([id, c]) => ({
@@ -177,4 +179,6 @@ rui.clearPicks.addEventListener('click', () => {
   rui.result.textContent = '';
 });
 rui.find.addEventListener('click', findRoutes);
-rui.showRoads.addEventListener('change', () => map.setLayoutProperty('roads', 'visibility', rui.showRoads.checked ? 'visible' : 'none'));
+rui.showRoads.addEventListener('change', () => {
+  for (const id of ['roads', 'paths-line', 'paths-casing']) map.setLayoutProperty(id, 'visibility', rui.showRoads.checked ? 'visible' : 'none');
+});

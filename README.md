@@ -120,6 +120,31 @@ Every saved building takes part in a run (AI outlines and traced), or only those
 - **Avoid the fire at the minute on screen:** drops road segments within the clearance distance of buildings that are burning or burned at the minute shown in playback.
 - **Travel time** per segment is length ÷ speed × (1 + 0.6 / width) × (1 + 0.5 × nearby building coverage). It is static: no crowding or live traffic.
 
+## Field survey: GPS tracks and paths
+
+Public maps miss most of Polo's interior alleys, so students walk them with Strava and the class draws them in.
+
+1. **Export the walk.** The student who recorded it goes to strava.com, opens the **activity** (address `/activities/…`, not `/routes/…`) and chooses **⋯ → Export Original** (or Export GPX). Route files are refused: Strava simplifies them to about 100 points.
+2. **Import.** An editor opens **Routes → Import GPX walks**. `public/field.js` does the cleanup:
+   - keeps only walking and drops riding (over 9 km/h averaged over 15 s);
+   - splits the track where GPS was lost (over 20 s or a jump over 25 m);
+   - thins standing-still scribbles (a point at least every 3 m);
+   - **removes all timestamps and names**, keeping only the walk date.
+
+   Tracks show in pink, and the **GPS tracks** checkbox toggles them.
+3. **Draw paths.** Editors use **Draw path** (2D, satellite):
+   - Click along the middle of each alley. Ends snap to roads and other paths (green dot).
+   - Set the measured **width** and **who can pass**: on foot, motorcycles too, or cars and fire trucks.
+   - Phone GPS is only accurate to about 3–5 m, so use the tracks to see which gap between houses the alley follows, and the photo to place the line.
+4. **Routing uses the paths.** `prepareNetwork` in `public/routing.js` joins each path to the network:
+   - an end within 2.5 m of a junction joins it;
+   - an end on a road or path within 3 m splits that line into a T-junction.
+
+   Walking routes can use every path. Fire-truck routes use only paths marked for cars and at least the truck's width. With no paths, routing is exactly IgnisShield-Web's.
+
+Shared mode needs `supabase/upgrade-2-field-paths.sql` run once. Raw GPX files belong in `field-data/gpx/`, which is kept out of the repository.
+
+
 ## Model and tests
 
 `public/fire.js` and `public/routing.js` are line-for-line ports of IgnisShield-Web's `backend/model.py` and `engine.py` (model 0.4.0). They use Python's own random number generator, so a seed reproduces the Python run exactly. It is an uncalibrated teaching model with disclosed assumptions, not a forecast.

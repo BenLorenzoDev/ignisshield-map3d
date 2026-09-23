@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="loading">
   <div id="map"></div>
   <div id="toolbar">
     <div id="title">IgnisShield · Sitio Polo, Balamban</div>
@@ -24,8 +24,10 @@
       <label><input id="show-ai" type="checkbox" checked> AI outlines</label>
       <label title="Reference only: 88 buildings from the earlier QGIS inventory (orange). Not part of the shared map and cannot be edited."><input id="show-inventory" type="checkbox"> Inventory</label>
       <label><input id="show-roads" type="checkbox" checked> Roads</label>
+      <label><input id="show-tracks" type="checkbox" checked> GPS tracks</label>
     </div>
     <button id="trace" class="primary">Trace building</button>
+    <button id="draw-path" class="primary">Draw path</button>
     <button id="scenario-btn" aria-pressed="false">Scenario &amp; runs</button>
     <button id="routes-btn" aria-pressed="false">Routes</button>
     <button id="log-btn" aria-pressed="false">Run log (<span id="log-count">0</span>)</button>
@@ -51,6 +53,16 @@
       <div id="inputs-note" class="muted small"></div>
     </details>
     <button id="ignite" class="fire">Start fire here</button>
+  </div>
+
+  <div id="path-panel" hidden>
+    <strong>Path (field survey)</strong>
+    <div id="path-meta" class="muted small"></div>
+    <label class="field"><span>Measured width <i>m</i></span><input id="path-width" type="number" min="0.3" max="20" step="0.1"></label>
+    <label class="field"><span>Who can pass</span><select id="path-access"><option value="walk">People on foot only</option><option value="motorcycle">Motorcycles too</option><option value="vehicle">Cars and fire trucks</option></select></label>
+    <label class="field"><span>Note</span><input id="path-note" type="text" maxlength="200" placeholder="e.g. 1.1 m at the sari-sari store"></label>
+    <div class="muted small">Used by Routes: walking routes can use every path; fire-truck routes only paths marked for cars and at least as wide as the truck needs.</div>
+    <button id="path-delete" class="danger">Delete path</button>
   </div>
 
   <div id="scenario" class="side" hidden>
@@ -110,6 +122,11 @@
       <button id="clear-picks">Clear</button>
     </div>
     <div id="rt-result"></div>
+    <hr>
+    <strong class="small">Field GPS tracks</strong>
+    <div id="tracks-list" class="small"></div>
+    <label class="file-btn">Import GPX walks<input id="gpx-input" type="file" accept=".gpx" multiple hidden></label>
+    <div class="muted small">Use the recorded activity (Strava: open the activity, ⋯ → Export Original). Only the walking is kept; times and names are removed. Then use <b>Draw path</b> to draw each alley along the tracks.</div>
     <div class="muted small legend-roads"><i style="background:#e53935"></i>&lt; 2 m <i style="background:#fb8c00"></i>&lt; 3.5 m <i style="background:#fdd835"></i>&lt; 5 m <i style="background:#9e9e9e"></i>wider · road widths are OSM-based assumptions by road class</div>
   </div>
 
@@ -162,9 +179,11 @@
   <script src="paper.js"></script>
   <script src="routing.js"></script>
   <script src="fire-gl.js"></script>
+  <script src="field.js"></script>
   <script src="app.js"></script>
   <script src="fire-ui.js"></script>
   <script src="route-ui.js"></script>
+  <script src="paths-ui.js"></script>
   <script src="cloud-ui.js"></script>
 </body>
 </html>

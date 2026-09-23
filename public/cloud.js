@@ -71,6 +71,24 @@ const cloud = (() => {
     },
     async saveSetting(key, value) { const {error} = await client.from('settings').upsert({key, value}); if (error) throw error; },
 
+    // ---------- field data: GPS tracks and surveyed paths (supabase/upgrade-2-field-paths.sql) ----------
+    async loadTracks() {
+      return (await all("tracks", "id, name, walked_on, geometry", "id")).map(r => ({type: "Feature", geometry: r.geometry, properties: {id: r.id, name: r.name, walked_on: r.walked_on}}));
+    },
+    async addTrack(f) {
+      const {error} = await client.from("tracks").insert({id: f.properties.id, name: f.properties.name, walked_on: f.properties.walked_on, geometry: f.geometry});
+      if (error) throw error;
+    },
+    async deleteTrack(id) { const {error} = await client.from("tracks").delete().eq("id", id); if (error) throw error; },
+    async loadPaths() {
+      return (await all("paths", "id, geometry, properties", "id")).map(r => ({type: "Feature", geometry: r.geometry, properties: {...r.properties, id: r.id}}));
+    },
+    async savePath(f) {
+      const {error} = await client.from("paths").upsert({id: f.properties.id, geometry: f.geometry, properties: f.properties});
+      if (error) throw error;
+    },
+    async deletePath(id) { const {error} = await client.from("paths").delete().eq("id", id); if (error) throw error; },
+
     // ---------- admin page (GitHub-only admin; editors are approved accounts) ----------
     async signInWithGitHub() {
       const {error} = await client.auth.signInWithOAuth({provider: 'github', options: {redirectTo: location.origin + location.pathname}});
@@ -86,6 +104,8 @@ const cloud = (() => {
         .on('postgres_changes', {event: '*', schema: 'public', table: 'buildings'}, p => handlers.building(p.eventType === 'DELETE' ? null : p.new, p.old?.id))
         .on('postgres_changes', {event: 'INSERT', schema: 'public', table: 'runs'}, p => handlers.run(p.new))
         .on('postgres_changes', {event: '*', schema: 'public', table: 'settings'}, p => handlers.setting(p.new))
+        .on('postgres_changes', {event: '*', schema: 'public', table: 'paths'}, p => handlers.path?.(p.eventType === 'DELETE' ? null : p.new, p.old?.id))
+        .on('postgres_changes', {event: '*', schema: 'public', table: 'tracks'}, p => handlers.track?.(p.eventType === 'DELETE' ? null : p.new, p.old?.id))
         .subscribe();
     }
   });

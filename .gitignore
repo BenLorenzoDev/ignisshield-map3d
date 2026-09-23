@@ -2,3 +2,6 @@ node_modules/
 runtime/
 .vercel/
 .env*
+
+# Raw field data (GPS tracks include times and personal routes): keep out of the repository
+field-data/

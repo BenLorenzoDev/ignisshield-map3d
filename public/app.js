@@ -59,7 +59,7 @@ let syncTimer = null;
 const canEdit = () => !cloud.enabled || cloud.editor;
 function requireEdit() {
   if (canEdit()) return true;
-  showHint(cloud.user ? 'Your account is not on the editors list yet, so the shared map is view-only for you. Ask the project owner to add your email.'
+  showHint(cloud.user ? 'Your account is not approved as an editor yet, so the shared map is view-only for you. Ask the project owner to approve it.'
     : 'The shared map is view-only until you sign in as a class editor (Sign in, top right).', 6000);
   return false;
 }

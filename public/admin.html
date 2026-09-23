@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IgnisShield Admin</title>
+  <style>
+    :root { --ink: #1f2933; --muted: #5f6b76; --line: #e3e6e8; --bg: #f4f6f8; --card: #fff; --accent: #2d7ff9; --ok: #2e7d32; --warn: #b3261e; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+    header { background: #2d3436; color: #fff; padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    header h1 { font-size: 16px; margin: 0; flex: 1; }
+    header a { color: #cfe3ff; }
+    main { max-width: 900px; margin: 16px auto; padding: 0 16px; display: grid; gap: 16px; }
+    section { background: var(--card); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.12); padding: 14px 16px; }
+    h2 { font-size: 15px; margin: 0 0 8px; }
+    .muted { color: var(--muted); } .small { font-size: 12px; }
+    input[type=email], input[type=password], input[type=search], textarea { font: inherit; padding: 6px 8px; border: 1px solid #c9ced3; border-radius: 4px; width: 100%; }
+    textarea { min-height: 70px; }
+    button { font: inherit; border: 0; border-radius: 4px; padding: 7px 12px; cursor: pointer; background: #eef1f4; }
+    button.primary { background: var(--accent); color: #fff; }
+    button.danger { background: #fdecea; color: var(--warn); }
+    button:disabled { opacity: .5; cursor: default; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .grid { display: grid; gap: 8px; max-width: 360px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    th { font-size: 12px; color: var(--muted); font-weight: 600; }
+    .badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 10px; background: #e8f0fe; color: #1a56c4; margin-left: 4px; }
+    .switch { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+    .switch input { width: 18px; height: 18px; accent-color: var(--ok); }
+    #msg { min-height: 20px; }
+    #msg.err { color: var(--warn); } #msg.ok { color: var(--ok); }
+    .table-wrap { overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>IgnisShield · Admin</h1>
+    <span id="who" class="small"></span>
+    <a href="./">Back to the map</a>
+  </header>
+  <main>
+    <div id="msg" role="status"></div>
+
+    <section id="signin" hidden>
+      <h2>Admin sign-in</h2>
+      <p>The admin page opens only for the project owner's GitHub account. Email and password accounts cannot be admins.</p>
+      <button id="github-btn" class="primary">Sign in with GitHub</button>
+    </section>
+
+    <section id="denied" hidden>
+      <h2>Not the admin account</h2>
+      <p>You are signed in, but this account is not the project owner's GitHub account. Sign out, then sign in with GitHub.</p>
+      <button id="signout-2">Sign out</button>
+    </section>
+
+    <div id="admin" hidden>
+      <section>
+        <h2>Accounts</h2>
+        <p class="muted small">Everyone who has created an account in the app. Students sign up themselves on the map (Sign in → Create account), then tell you the email they used. Tick <b>Editor</b> for that account. Emails are not verified, so only approve an account when you know who made it. New rights apply the next time the student reloads the page.</p>
+        <div class="row" style="margin-bottom:8px"><input id="search" type="search" placeholder="Search email" style="max-width:320px"><button id="reload">Refresh</button><span id="counts" class="muted small"></span></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Email</th><th>Signs in with</th><th>Created</th><th>Last sign-in</th><th>Editor</th></tr></thead>
+          <tbody id="accounts"></tbody>
+        </table></div>
+      </section>
+
+      <section>
+        <button id="signout">Sign out</button>
+      </section>
+    </div>
+  </main>
+  <script src="vendor/supabase/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="cloud.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

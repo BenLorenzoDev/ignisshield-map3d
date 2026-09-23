@@ -27,7 +27,7 @@ function renderAccount() {
       <label class="field"><span>Email</span><input id="acc-email" type="email" autocomplete="username"></label>
       <label class="field"><span>Password <i>(at least 6 characters)</i></span><input id="acc-pass" type="password" autocomplete="current-password"></label>
       <div class="row"><button id="acc-in" class="primary-soft">Sign in</button><button id="acc-up">Create account</button></div>
-      <p class="muted small">Anyone can view the map and run fires without an account. To change buildings, inputs or the class trial values, create an account and ask the project owner to add your email to the editors list.</p>`;
+      <p class="muted small">Anyone can view the map and run fires without an account. To change buildings, inputs or the class trial values, create an account, then tell the project owner the email you used so they can approve it.</p>`;
     const creds = () => [$('#acc-email').value.trim(), $('#acc-pass').value];
     $('#acc-in').addEventListener('click', () => act(() => cloud.signIn(...creds())));
     $('#acc-up').addEventListener('click', () => act(() => cloud.signUp(...creds())));
@@ -37,9 +37,10 @@ function renderAccount() {
   aui.body.innerHTML = `${map}
     <p class="small">Signed in as <b>${esc(cloud.user.email)}</b><br>${cloud.editor
       ? 'Role: <b>editor</b>. You can change the shared map, and your runs go into the class run log.'
-      : 'Role: <b>viewer</b>. Your email is not on the editors list yet; ask the project owner to add it. You can still run fires; those runs stay on this device.'}</p>
+      : 'Role: <b>viewer</b>. Your account is not approved as an editor yet; ask the project owner to approve it, then reload. You can still run fires; those runs stay on this device.'}</p>
     ${seedable ? `<p class="small"><b>The shared map is empty.</b> Upload the first buildings: this browser's saved map (${localStore.features.length.toLocaleString()} buildings) or, if that is empty, the 1,559 AI outlines.</p>
       <button id="acc-seed" class="primary-soft">Upload the first buildings</button>` : ''}
+    ${cloud.admin ? '<a class="small" href="admin.html" target="_blank" rel="noopener">Open the admin page: manage editors</a>' : ''}
     <button id="acc-out">Sign out</button>`;
   $('#acc-out').addEventListener('click', () => act(() => cloud.signOut()));
   if (seedable) $('#acc-seed').addEventListener('click', seedShared);

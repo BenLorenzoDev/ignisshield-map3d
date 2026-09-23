@@ -1,6 +1,6 @@
 -- IgnisShield Map 3D: shared map for the class.
--- Run once in the Supabase dashboard: SQL Editor -> New query -> paste -> Run.
--- Everyone (even signed out) can READ. Only signed-in accounts whose email is in `editors` can WRITE.
+-- Run once in the Supabase dashboard: SQL Editor -> New query -> paste -> Run. Then run upgrade-1-github-admin.sql.
+-- Everyone (even signed out) can READ. Only approved editor accounts can WRITE (upgrade-1 replaces the email list below).
 
 -- Who may change the shared map. Add or remove students here (Table Editor -> editors).
 create table if not exists public.editors (
@@ -97,5 +97,4 @@ do $$ begin
   alter publication supabase_realtime add table public.buildings, public.runs, public.settings;
 exception when duplicate_object then null; end $$;
 
--- First editor: replace with your own email, then run.
-insert into public.editors (email, note) values ('YOUR-EMAIL@example.com', 'project owner') on conflict do nothing;
+-- Next: run upgrade-1-github-admin.sql (GitHub-only admin, account-based editors).

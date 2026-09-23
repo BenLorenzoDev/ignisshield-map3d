@@ -5,16 +5,17 @@ const cloud = (() => {
   const enabled = Boolean(cfg.supabaseUrl && cfg.supabaseAnonKey && window.supabase);
   const client = enabled ? supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey) : null;
   const PAGE = 1000;
-  const state = {enabled, client, user: null, editor: false};
+  const state = {enabled, client, user: null, editor: false, admin: false};
 
   async function refreshRole() {
     const {data: {session}} = await client.auth.getSession();
     state.user = session?.user ?? null;
-    state.editor = false;
+    state.editor = state.admin = false;
     if (state.user) {
-      const {data, error} = await client.rpc('is_editor');
-      if (error) throw error;
-      state.editor = data === true;
+      const [ed, ad] = await Promise.all([client.rpc('is_editor'), client.rpc('is_admin')]);
+      if (ed.error) throw ed.error;
+      state.editor = ed.data === true;
+      state.admin = !ad.error && ad.data === true; // is_admin exists once supabase/admin.sql has been run
     }
   }
 
@@ -69,6 +70,15 @@ const cloud = (() => {
       return data?.value ?? null;
     },
     async saveSetting(key, value) { const {error} = await client.from('settings').upsert({key, value}); if (error) throw error; },
+
+    // ---------- admin page (GitHub-only admin; editors are approved accounts) ----------
+    async signInWithGitHub() {
+      const {error} = await client.auth.signInWithOAuth({provider: 'github', options: {redirectTo: location.origin + location.pathname}});
+      if (error) throw error;
+    },
+    async listAccounts() { const {data, error} = await client.rpc('list_accounts'); if (error) throw error; return data; },
+    async approveEditor(userId, email) { const {error} = await client.from('editor_accounts').insert({user_id: userId, email}); if (error && error.code !== '23505') throw error; },
+    async removeEditor(userId) { const {error} = await client.from('editor_accounts').delete().eq('user_id', userId); if (error) throw error; },
 
     /** Live changes from other people. handlers: {building(row|null, oldId), run(row), setting(row)} */
     subscribe(handlers) {

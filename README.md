@@ -134,12 +134,17 @@ Every saved building takes part in a run (AI outlines and traced), or only those
 - **Viewing:** anyone with the link can view the map, run fires and find routes.
 - **Editing:** only signed-in accounts on the `editors` list can edit buildings, their inputs or the trial values.
 
+**Who can do what.** Email confirmation is off, because Supabase's free mailer cannot reach students. That means an account's email proves nothing, so rights are tied to identities that can't be claimed by typing:
+- **Admin:** only the project owner's **GitHub** account, matched by GitHub's permanent account id (BenLorenzoDev = 23088786) in `admin_github_ids`. The admin page `/admin.html` has GitHub sign-in only. The admin can always edit.
+- **Editors:** specific accounts the admin approves on `/admin.html`. Students create their own email + password account on the map, tell the owner which email they used, and the owner ticks **Editor**. Only approve an account when you know who made it.
+- **Viewers:** everyone else, including signed-out visitors.
+
 **Setting up Supabase (once).**
 1. Create a free project at supabase.com.
-2. Open *SQL Editor*, paste `supabase/schema.sql`, change the last line to your email, and run it.
-3. Open *Authentication → Sign In / Providers → Email* and turn off *Confirm email*. Supabase's free built-in mailer only sends to project members, so students could not confirm otherwise.
-4. Copy the *Project URL* and the *anon / publishable key* (*Project Settings → API*) into `public/config.js`.
-5. Open the app, sign up with that email and sign in. In the Sign-in panel, use **Upload the first buildings**. Do this from the local copy (`http://127.0.0.1:8780`) so your own traced and edited buildings are the ones uploaded.
-6. Add students by inserting their emails into the `editors` table (*Table Editor → editors*). They create their own accounts in the app.
+2. In *SQL Editor*, run `supabase/schema.sql`, then `supabase/upgrade-1-github-admin.sql`.
+3. In *Authentication → Sign In / Providers → Email*, turn off *Confirm email*.
+4. Create a GitHub OAuth app (GitHub → *Settings → Developer settings → OAuth Apps → New OAuth App*) with the callback URL `https://<project-ref>.supabase.co/auth/v1/callback`. Paste its Client ID and a new Client secret into *Authentication → Sign In / Providers → GitHub* and enable it.
+5. In *Authentication → URL Configuration*, set the Site URL to the live site and add Redirect URLs for the live site and `http://127.0.0.1:8780`, each followed by `/**`.
+6. Copy the *Project URL* and the *anon / publishable key* into `public/config.js`.
 
-The anon key is public by design; row level security in `schema.sql` decides who may write. Shared runs can be removed only in the Supabase dashboard.
+The anon key is public by design; row level security decides who may write. Shared runs can be removed only in the Supabase dashboard.

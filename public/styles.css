@@ -77,3 +77,4 @@ hr { border: 0; border-top: 1px solid #e3e6e8; margin: 4px 0; width: 100%; }
 .live .row { flex-wrap: wrap; }
 .live .row > * { flex: 1 1 100%; }
 #wx-hour { width: 100%; }
+#imagery { font: inherit; border: 0; border-left: 1px solid #ddd; padding: 0 6px; background: transparent; }

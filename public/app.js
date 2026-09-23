@@ -7,6 +7,20 @@ const COLOR = {user: '#2d7ff9', ai: '#35c6d6', selected: '#ffd33d'};
 const FIRE = {burnA: '#ff3b1f', burnB: '#ff7a00', burned: '#2a2522', flame: '#ffb01f'};
 const empty = () => ({type: 'FeatureCollection', features: []});
 
+// Satellite photo dates available for Sitio Polo in Esri World Imagery Wayback (all ~0.6 m/pixel, zoom 18).
+// Default 2023: cloud-free over the whole study area. 2026 is newer and a little sharper but has clouds over the
+// northern (pier-side) settlement. 2024 is largely the same photo as 2023.
+const IMAGERY = [
+  {release: '47963', date: '2023-06-29', label: '2023-06-29 · no clouds (default)'},
+  {release: '10842', date: '2026-05-28', label: '2026-05-28 · newest, clouds near the pier'},
+  {release: '12428', date: '2024-06-06', label: '2024-06-06 · no clouds, mostly same as 2023'},
+  {release: '27982', date: '2025-04-24', label: '2025-04-24 · softer'},
+  {release: '45441', date: '2022-08-31', label: '2022-08-31 · oldest, darker'}
+];
+const IMAGERY_KEY = 'ignisshield-map3d.imagery';
+const waybackTiles = release => [`https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/${release}/{z}/{y}/{x}`];
+let imagery = (() => { try { return IMAGERY.find(i => i.release === localStorage.getItem(IMAGERY_KEY)) ?? IMAGERY[0]; } catch { return IMAGERY[0]; } })();
+
 const buildingColor = burning => ['match', ['coalesce', ['feature-state', 'fire'], 'safe'],
   'burning', burning, 'burned', FIRE.burned,
   ['case', ['all', ['==', ['get', 'origin'], 'ai'], ['!', ['coalesce', ['get', 'edited'], false]]], COLOR.ai, COLOR.user]];
@@ -29,8 +43,15 @@ const ui = {
   trace: $('#trace'), exportBtn: $('#export'), count: $('#count'), hint: $('#hint'),
   panel: $('#panel'), panelTitle: $('#panel-title'), panelSource: $('#panel-source'),
   storeys: $('#storeys'), height: $('#height'), editHint: $('#edit-hint'),
-  removeCorner: $('#remove-corner'), revert: $('#revert'), del: $('#delete')
+  removeCorner: $('#remove-corner'), revert: $('#revert'), del: $('#delete'), imagery: $('#imagery')
 };
+ui.imagery.innerHTML = IMAGERY.map(i => `<option value="${i.release}">${i.label}</option>`).join('');
+ui.imagery.value = imagery.release;
+ui.imagery.addEventListener('change', () => {
+  imagery = IMAGERY.find(i => i.release === ui.imagery.value);
+  try { localStorage.setItem(IMAGERY_KEY, imagery.release); } catch { /* not remembered */ }
+  map.getSource('satellite')?.setTiles(waybackTiles(imagery.release));
+});
 
 let view = '3d';
 let drawing = null;        // [lng, lat][] while tracing
@@ -150,8 +171,8 @@ map.on('load', async () => {
   // Satellite: Esri World Imagery. Native imagery here stops at z18, so overzoom beyond it.
   map.addSource('satellite', {
     type: 'raster', tileSize: 256, maxzoom: 18,
-    tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-    attribution: 'Imagery © Esri, Maxar, Earthstar Geographics'
+    tiles: waybackTiles(imagery.release),
+    attribution: 'Imagery © Esri World Imagery Wayback, Maxar, Earthstar Geographics'
   });
   map.addLayer({id: 'satellite', type: 'raster', source: 'satellite', layout: {visibility: 'none'}}, firstSymbol);
 
@@ -246,6 +267,7 @@ function setBase(next) {
   ui.base.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.base === next)));
   const sat = next === 'satellite';
   map.setLayoutProperty('satellite', 'visibility', sat ? 'visible' : 'none');
+  ui.imagery.hidden = !sat;
   // OSM buildings would cover the roofs in the photo
   for (const id of ['building', 'building-3d']) map.setLayoutProperty(id, 'visibility', sat ? 'none' : 'visible');
 }
@@ -293,7 +315,7 @@ function finishTrace() {
     type: 'Feature',
     geometry: {type: 'Polygon', coordinates: [[...drawing, drawing[0]]]},
     properties: {id, kind: 'building', storeys: 1, origin: 'traced',
-      source: 'Traced from Esri World Imagery roof outline', traced_at: new Date().toISOString()}
+      source: `Traced from Esri World Imagery (Wayback ${imagery.date}) roof outline`, traced_at: new Date().toISOString()}
   });
   stopTrace();
   select(id);

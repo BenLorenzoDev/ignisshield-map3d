@@ -18,6 +18,14 @@ The **AI outlines** and **Inventory** checkboxes show or hide those layers.
 
 Controls: drag to pan, right-drag (or Ctrl+drag) to rotate and tilt, scroll to zoom.
 
+## Satellite photo date
+
+In Satellite mode a menu picks the photo date from Esri World Imagery Wayback. All five photos are about 0.6 m/pixel (zoom 18); zooming further only enlarges them.
+- **2023-06-29 (default):** cloud-free over the whole study area.
+- **2026-05-28:** newer and a little sharper, but clouds cover the settlement near the pier.
+
+Switch dates where one photo is cloudy or out of date, for example for recently built houses. Outlines can shift by about a metre between photos, so keep to one date for a block where possible. Each traced building records the photo date in its source.
+
 ## Trace a building
 
 1. Click **Satellite**, then **Trace building**. The map flattens to 2D and zooms in.

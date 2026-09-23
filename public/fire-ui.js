@@ -20,8 +20,8 @@ const fui = {
 
 // ---------- scenario settings (saved in this browser) ----------
 const RUN_FIELDS = [
-  {key: 'seed', name: 'First random seed', unit: '', min: 0, max: 2147483647, step: 1},
-  {key: 'repeats', name: 'Runs (seeds seed, seed+1, …)', unit: '', min: 1, max: 20, step: 1},
+  {key: 'seed', name: 'Replay number', unit: '', min: 0, max: 2147483647, step: 1},
+  {key: 'repeats', name: 'Number of runs', unit: '', min: 1, max: 20, step: 1},
   {key: 'minutes', name: 'Maximum model minutes', unit: 'min', min: 1, max: 240, step: 1}
 ];
 const draftTrials = () => JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(P.TRIALS).map(([k, t]) => [k, t.values]))));
@@ -181,12 +181,12 @@ const HELP = {
     what: 'The weather during the fire: humidity, temperature, wind speed and wind direction. It is the same for every building.',
     get: '“Use live forecast” loads the current conditions or any hour of the next two days for Sitio Polo (Open-Meteo). Or set the wind with the dial and slider, or type the values in the table.',
     sim: 'Dry, hot air makes buildings easier to ignite; the wind pushes the fire downwind and lets it jump wider gaps.'},
-  seed: {title: 'First random seed',
-    what: 'Fire spread has an element of chance, like real fire: a spark may or may not jump a gap. The seed fixes that chance, so the same inputs and seed always give exactly the same fire.',
-    get: 'Keep 42 unless you want different luck. Write the seed down with your results so anyone can repeat the run.',
-    sim: 'The model draws one random number for each building at risk each minute; the seed starts that sequence.'},
+  seed: {title: 'Replay number', sub: 'called the “random seed” in research',
+    what: 'Real fires involve luck: a spark may or may not jump a gap. The model copies this by “rolling dice” for every building at risk, every minute. The replay number picks one particular set of dice rolls. The same inputs with the same number always give exactly the same fire; another number shows another way the same fire could have gone.',
+    get: 'Keep 42 to start. Change it to see how much luck matters. For a presentation, note the replay number of the run you want to show, so you can play exactly the same fire again. Anyone with your inputs and this number can check your result.',
+    sim: 'Why it is kept: without it every press of Start would give a different fire, so nobody could repeat a result, and comparing Trial A with Trial B would mix up the effect of the inputs with luck. With the same replay numbers, any difference comes from the inputs. In the CSV export this column is called “seed”, the usual research term.'},
   repeats: {title: 'Runs',
-    what: 'How many times to simulate the same inputs, each with a different seed (seed, seed+1, …).',
+    what: 'How many times to simulate the same inputs, each with the next replay number (42, 43, 44, …): the same conditions with different luck.',
     get: 'The paper runs each trial three times. More runs give a more reliable average but take a little longer.',
     sim: 'The Run log shows every run and the average ± spread of the severity and burned area.'},
   minutes: {title: 'Maximum model minutes',
@@ -444,7 +444,7 @@ function renderLog() {
       ? `<div class="muted small">Mean Sf ${mean(sf).toFixed(3)} ± ${sd(sf).toFixed(3)} (SD) · ${P.level(mean(sf))} · mean Ab ${Math.round(mean(ab)).toLocaleString()} m²</div>` : '';
     const owner = r0.shared ? ` · by ${esc(r0.by ?? 'class')}` : cloud.enabled ? ' · <i>this device only</i>' : '';
     return `<div class="batch"><div><b>${esc(r0.scenario)}</b> · start ${esc(r0.ignition)} · ${r0.n_buildings} buildings · ${new Date(r0.utc).toLocaleString()}${owner}</div>${summary}
-      <table><thead><tr><th>Seed</th><th>Sf</th><th>Level</th><th>If kW/m</th><th>R m/min</th><th>Q MW</th><th>Ab m²</th><th>φs °</th><th>τb min</th><th>Tsim min</th><th></th></tr></thead><tbody>
+      <table><thead><tr><th title="Replay number (random seed)">Replay #</th><th>Sf</th><th>Level</th><th>If kW/m</th><th>R m/min</th><th>Q MW</th><th>Ab m²</th><th>φs °</th><th>τb min</th><th>Tsim min</th><th></th></tr></thead><tbody>
       ${rows.map(r => `<tr><td>${esc(r.seed)}</td><td>${r.Y1_Sf.toFixed(3)}</td><td>${esc(r.level)}</td><td>${r.Y2_If_kW_m.toFixed(1)}</td><td>${r.Y3_R_m_min.toFixed(2)}</td><td>${r.Y4_Q_MW.toFixed(2)}</td><td>${Math.round(r.Y5_Ab_m2).toLocaleString()}</td><td>${r.Y6_phi_deg === '' ? '—' : esc(r.Y6_phi_deg)}</td><td>${r.Y7_tau_min.toFixed(1)}</td><td>${esc(r.Y8_Tsim_min)}</td>
         <td>${sessionRuns.has(r.id) ? `<button data-replay="${esc(r.id)}">Replay</button>` : '<span class="muted small" title="Frames are kept only in the session that ran them">—</span>'}</td></tr>`).join('')}
       </tbody></table></div>`;
@@ -524,7 +524,7 @@ async function startFire() {
     for (const r of records) if (!runLog.some(x => x.id === r.id)) runLog.push({...r, shared, by: shared ? cloud.user.email : undefined});
     saveLog();
     if (!fui.log.hidden) renderLog();
-    fui.batchRun.innerHTML = Array.from({length: scenario.repeats}, (_, k) => `<option value="${batch}-${k}">Run ${k + 1} of ${scenario.repeats} · seed ${scenario.seed + k}</option>`).join('');
+    fui.batchRun.innerHTML = Array.from({length: scenario.repeats}, (_, k) => `<option value="${batch}-${k}">Run ${k + 1} of ${scenario.repeats} · replay #${scenario.seed + k}</option>`).join('');
     select(null);
     showRun(first);
   } catch (err) {
@@ -540,7 +540,7 @@ function showRun(id) {
   run = sessionRuns.get(id);
   prepareEffects(run);
   if (![...fui.batchRun.options].some(o => o.value === id)) {
-    fui.batchRun.innerHTML = `<option value="${id}">Logged run · seed ${run.seed}</option>`;
+    fui.batchRun.innerHTML = `<option value="${id}">Logged run · replay #${run.seed}</option>`;
   }
   fui.batchRun.value = id;
   shown = new Uint8Array(run.features.length);

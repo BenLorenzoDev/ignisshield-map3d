@@ -66,8 +66,8 @@ The app follows the paper's Chapter 2 notation: nine inputs X1–X9 and eight ou
 - **Wr** alley/road width (m).
 
 **Scenario & runs** holds the weather inputs (**Hr** %, **Ta** °C, **Uw** m/s, **Θw** ° wind FROM) and the run settings:
-- first random seed;
-- number of runs, which use seeds seed, seed+1, …;
+- replay number (the random seed: the same inputs and number always give the same fire);
+- number of runs, each with the next replay number;
 - maximum minutes;
 - whether to use only buildings inside the study boundary.
 

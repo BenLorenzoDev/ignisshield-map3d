@@ -364,6 +364,7 @@ function select(id) {
 function updatePanel() {
   const f = selected();
   ui.panel.hidden = !f;
+  updateGuide();
   if (!f) return;
   const p = f.properties;
   ui.panelTitle.textContent = p.origin === 'ai' ? (p.edited ? 'AI outline (edited)' : 'AI outline') : 'Traced building';
@@ -376,7 +377,7 @@ function updatePanel() {
   ui.storeys.disabled = ui.del.disabled = !editable;
   ui.removeCorner.disabled = !editable || selectedVertex === null || ring(f).length <= 3;
   ui.revert.disabled = !editable || JSON.stringify(f.geometry) === JSON.stringify(original);
-  renderBuildingInputs(f);
+  renderInputs(f);
 }
 function renderEdit() {
   const src = map.getSource('edit');

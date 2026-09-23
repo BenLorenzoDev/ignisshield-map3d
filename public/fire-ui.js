@@ -1,4 +1,4 @@
-/* global map, store, storeVersion, studyData, selected, saveStore, select, showHint, updatePanel, STOREY_M, FIRE, buildingColor, empty, $, IgnisFire, IgnisPaper */
+/* global drawing, pathDraft, cloud, canEdit, requireEdit, map, store, storeVersion, studyData, selected, saveStore, select, showHint, updatePanel, STOREY_M, FIRE, buildingColor, empty, $, IgnisFire, IgnisPaper */
 // Fire scenario UI: the paper's inputs, Trials A–D, repeated runs, playback and the run log.
 const P = IgnisPaper;
 const SCENARIO_KEY = 'ignisshield-map3d.scenario';
@@ -6,13 +6,13 @@ const LOG_KEY = 'ignisshield-map3d.runs';
 const LOG_LIMIT = 1000;
 
 const fui = {
-  buildingInputs: $('#building-inputs'), inputsNote: $('#inputs-note'), ignite: $('#ignite'),
-  scenarioBtn: $('#scenario-btn'), scenario: $('#scenario'), source: $('#scenario-source'), trialText: $('#trial-text'),
-  scenarioInputs: $('#scenario-inputs'), resetTrial: $('#reset-trial'), runInputs: $('#run-inputs'), rules: $('#rules'),
-  boundaryOnly: $('#boundary-only'),
+  xInputs: $('#x-inputs'), inputsNote: $('#inputs-note'), ignite: $('#ignite'),
+  source: $('#scenario-source'), trialText: $('#trial-text'),
+  resetTrial: $('#reset-trial'), runInputs: $('#run-inputs'), rules: $('#rules'),
+  boundaryOnly: $('#boundary-only'), panelClose: $('#panel-close'), guide: $('#guide'), guideHide: $('#guide-hide'), help: $('#help-btn'),
   playback: $('#playback'), play: $('#play'), restart: $('#restart'), frame: $('#frame'), minute: $('#minute'),
   speed: $('#speed'), status: $('#run-status'), windArrow: $('#wind-arrow'), windText: $('#wind-text'),
-  metrics: $('#metrics'), clearFire: $('#clear-fire'), batchRun: $('#batch-run'), outputNotes: $('#output-notes'),
+  metrics: $('#metrics'), headline: $('#result-headline'), clearFire: $('#clear-fire'), batchRun: $('#batch-run'), outputNotes: $('#output-notes'),
   logBtn: $('#log-btn'), log: $('#log'), logBody: $('#log-body'), logCount: $('#log-count'),
   logCsv: $('#log-csv'), logClear: $('#log-clear'),
   live: $('#live-weather'), wxLoad: $('#wx-load'), wxHour: $('#wx-hour'), wxStatus: $('#wx-status')
@@ -28,7 +28,7 @@ const draftTrials = () => JSON.parse(JSON.stringify(Object.fromEntries(Object.en
 function loadScenario() {
   let s = {};
   try { s = JSON.parse(localStorage.getItem(SCENARIO_KEY)) || {}; } catch { /* use defaults */ }
-  if ('humidity' in s) { // settings saved by the previous version, in model units
+  if ('humidity' in s) { // settings saved by an older version, in model units
     s = {custom: {Hr: s.humidity, Ta: s.temp_c, Tw: s.wind_dir, Uw: Math.round(s.wind_spd / 3.6 * 10) / 10}, seed: s.seed, minutes: s.minutes};
   }
   const weather = Object.fromEntries(P.INPUTS.filter(v => v.scope === 'weather').map(v => [v.key, v.def]));
@@ -38,31 +38,13 @@ function loadScenario() {
 const scenario = loadScenario();
 const saveScenario = () => { try { localStorage.setItem(SCENARIO_KEY, JSON.stringify(scenario)); } catch { /* session only */ } };
 
-const inputField = (v, id, value, placeholder = '') =>
-  `<label class="field"><span><b>${v.sym}</b> ${v.name} <i>${v.unit}</i></span>` +
-  `<input id="${id}" type="number" min="${v.min}" max="${v.max}" step="${v.step}" value="${typeof value === 'number' ? value : ''}" placeholder="${placeholder}"></label>`;
-
 function readField(v, input, allowBlank = false) {
   if (allowBlank && input.value === '') return null;
   return P.check(v.key, input.value === '' ? NaN : Number(input.value));
 }
 
+/** Run settings (step 2) and anything else that depends on the scenario, then the open building form. */
 function renderScenario() {
-  fui.source.value = scenario.source;
-  const trial = P.TRIALS[scenario.source];
-  fui.trialText.textContent = trial ? `Expected level: ${trial.level}. ${trial.text} Draft numbers: the paper gives none.` : 'Each building uses its own inputs (click a building). Weather below applies to all.';
-  fui.resetTrial.hidden = !trial;
-  fui.live.hidden = Boolean(trial);
-  fui.wxStatus.textContent = scenario.custom.source ?? 'Weather entered by hand.';
-  const fields = trial ? P.INPUTS : P.INPUTS.filter(v => v.scope === 'weather');
-  const values = trial ? scenario.trials[scenario.source] : scenario.custom;
-  fui.scenarioInputs.innerHTML = fields.map(v => inputField(v, `sc-${v.key}`, values[v.key], v.auto ? 'measured' : '')).join('');
-  if (trial && cloud.enabled) {
-    // Trial values are shared by the whole class; only editors change them
-    fui.trialText.textContent += ' These trial values are shared by the class.';
-    if (!canEdit()) fui.scenarioInputs.querySelectorAll('input').forEach(el => { el.disabled = true; });
-    fui.resetTrial.hidden = !canEdit();
-  }
   fui.runInputs.innerHTML = RUN_FIELDS.map(v => `<label class="field"><span>${v.name}</span><input id="run-${v.key}" type="number" min="${v.min}" max="${v.max}" step="${v.step}" value="${scenario[v.key]}"></label>`).join('');
   fui.boundaryOnly.checked = scenario.boundaryOnly;
   updateWind();
@@ -71,20 +53,6 @@ function renderScenario() {
 fui.rules.innerHTML = P.RULE_TEXT.map(t => `<li>${t}</li>`).join('');
 fui.outputNotes.innerHTML = P.OUTPUT_NOTES.map(t => `<li>${t}</li>`).join('');
 
-fui.source.addEventListener('change', () => { scenario.source = fui.source.value; saveScenario(); renderScenario(); });
-fui.scenarioInputs.addEventListener('change', e => {
-  const v = P.BY_KEY[e.target.id.slice(3)];
-  const trial = P.TRIALS[scenario.source];
-  const target = trial ? scenario.trials[scenario.source] : scenario.custom;
-  if (trial && !requireEdit()) { renderScenario(); return; }
-  try {
-    target[v.key] = readField(v, e.target, v.auto);
-    if (target === scenario.custom) { scenario.custom.source = 'Weather edited by hand.'; fui.wxStatus.textContent = scenario.custom.source; }
-    saveScenario();
-    if (trial) shareTrials();
-  } catch (err) { showHint(err.message, 6000); e.target.value = target[v.key] ?? ''; }
-  updateWind();
-});
 fui.runInputs.addEventListener('change', e => {
   const v = RUN_FIELDS.find(f => `run-${f.key}` === e.target.id);
   const n = Number(e.target.value);
@@ -105,7 +73,7 @@ function shareTrials() {
 }
 
 // Right-hand panels: only one open at a time
-const SIDE = {scenario: [fui.scenarioBtn, fui.scenario], log: [fui.logBtn, fui.log]};
+const SIDE = {log: [fui.logBtn, fui.log]};
 function openSide(name) {
   for (const [key, [btn, panel]] of Object.entries(SIDE)) {
     const open = key === name && panel.hidden;
@@ -114,10 +82,9 @@ function openSide(name) {
   }
   if (typeof onSideChange === 'function') onSideChange(name);
 }
-fui.scenarioBtn.addEventListener('click', () => openSide('scenario'));
 fui.logBtn.addEventListener('click', () => { renderLog(); openSide('log'); });
 
-// ---------- per-building inputs (paper X1, X2, X3, X6, X7) ----------
+// ---------- step 1: the nine inputs X1–X9 for the selected building ----------
 let densityCache = {version: -1, byId: null};
 function measuredDensity() {
   if (densityCache.version !== storeVersion) {
@@ -127,32 +94,81 @@ function measuredDensity() {
   return densityCache.byId;
 }
 const BUILDING_FIELDS = P.INPUTS.filter(v => v.scope === 'building');
+const num = v => (typeof v === 'number' ? v : '');
 
-function renderBuildingInputs(f) {
-  const p = f.properties, local = measuredDensity().get(p.id);
-  fui.buildingInputs.innerHTML = BUILDING_FIELDS.map(v => inputField(v, `in-${v.key}`, typeof p[v.key] === 'number' ? p[v.key] : '', v.auto ? `measured ${local.Db.toFixed(4)}` : `default ${v.def}`)).join('');
-  if (!canEdit()) fui.buildingInputs.querySelectorAll('input').forEach(el => { el.disabled = true; });
-  const x = buildingPaperValues(f);
-  const trial = P.TRIALS[scenario.source];
-  let m;
-  try { m = P.toModel(x, local); } catch (err) { fui.inputsNote.textContent = err.message; return; }
-  fui.inputsNote.innerHTML = [
-    trial ? `<b>Trial ${scenario.source} is selected:</b> its values replace these for every building in the run.` : '',
-    `Model sees: coverage ${m.bldg_dens.toFixed(2)}, material ${m.bldg_mat} (${['', 'concrete', 'mixed', 'wood/nipa'][m.bldg_mat]}), ventilation ${m.oxygen_v}. Fuel load ≈ ${Math.round(x.Mb / P.RULES.woodMJPerKg)} kg/m² wood-equivalent; O₂ ≈ ${(x.O2 * P.RULES.airO2Percent).toFixed(1)} %.`,
-    p.inputs_src === 'entered' ? 'Some values entered by you.' : 'Blank fields use defaults: scenario assumptions, not measurements.'
-  ].filter(Boolean).join('<br>');
+/** One table row: symbol, meaning, value box, unit (the paper's Notations table). */
+function inputRow(v, value, placeholder, note) {
+  const weather = v.scope === 'weather';
+  return `<label class="x-row${weather ? ' weather' : ''}" title="${v.help ?? ''}">` +
+    `<span class="x-sym">${v.sym.replace(/ \((X\d)\)/, ' <i>$1</i>')}</span>` +
+    `<span class="x-name">${v.name}${weather ? ' <em>whole fire</em>' : ''}${note ? `<small>${note}</small>` : ''}</span>` +
+    `<input id="x-${v.key}" type="number" min="${v.min}" max="${v.max}" step="${v.step}" value="${num(value)}" placeholder="${placeholder}">` +
+    `<span class="x-unit">${v.unit.split(' (')[0].replace('count in this structure', 'count')}</span></label>`;
 }
-fui.buildingInputs.addEventListener('change', e => {
-  const f = selected(), v = P.BY_KEY[e.target.id.slice(3)];
-  if (!requireEdit()) { updatePanel(); return; }
+
+function renderInputs(f) {
+  const trial = P.TRIALS[scenario.source], p = f.properties, local = measuredDensity().get(p.id);
+  fui.source.value = scenario.source;
+  fui.trialText.textContent = trial
+    ? `Trial ${scenario.source} conditions (paper Table 1): ${trial.text} These nine values are used for every building in the run. Draft numbers: the paper gives none${cloud.enabled ? '. Shared by the class.' : '.'} The severity is not set here: the simulation works it out.`
+    : 'X1, X2, X3, X6 and X7 belong to this building. X4, X5, X8 and X9 are the weather for the whole fire.';
+  const values = trial ? scenario.trials[scenario.source] : {...Object.fromEntries(BUILDING_FIELDS.map(v => [v.key, p[v.key]])), ...scenario.custom};
+  fui.xInputs.innerHTML = P.INPUTS.map(v => {
+    const placeholder = v.auto ? local.Db.toFixed(4) : (trial ? '' : String(v.def));
+    const note = v.auto && values.Db == null ? 'measured from the map'
+      : v.key === 'Mb' ? `≈ ${Math.round((values.Mb ?? v.def) / P.RULES.woodMJPerKg)} kg/m² of wood` : v.key === 'O2' ? '1 = normal air (20.9 % O₂)' : '';
+    return inputRow(v, values[v.key], placeholder, note);
+  }).join('');
+  // Who may change what: building values and class trial values need an editor; custom weather is this device only
+  fui.xInputs.querySelectorAll('input').forEach(el => {
+    const scope = P.BY_KEY[el.id.slice(2)].scope;
+    el.disabled = trial ? (cloud.enabled && !canEdit()) : scope === 'building' && !canEdit();
+  });
+  fui.live.hidden = Boolean(trial);
+  fui.wxStatus.textContent = scenario.custom.source ?? 'Weather entered by hand.';
+  fui.resetTrial.hidden = !trial || (cloud.enabled && !canEdit());
+  let m;
+  try { m = P.toModel(buildingPaperValues(f), local); } catch (err) { fui.inputsNote.textContent = err.message; return; }
+  fui.inputsNote.innerHTML = [
+    `The model uses: coverage ${m.bldg_dens.toFixed(2)}, material ${m.bldg_mat} (${['', 'concrete', 'mixed', 'wood/nipa'][m.bldg_mat]}), wind ${m.wind_spd.toFixed(1)} km/h.`,
+    trial ? '' : (p.inputs_src === 'entered' ? 'Some building values entered by you.' : 'Grey numbers are defaults (assumptions, not measurements): type to replace them.')
+  ].filter(Boolean).join(' ');
+}
+
+fui.source.addEventListener('change', () => { scenario.source = fui.source.value; saveScenario(); renderScenario(); });
+fui.xInputs.addEventListener('change', e => {
+  const f = selected(), v = P.BY_KEY[e.target.id.slice(2)], trial = P.TRIALS[scenario.source];
   try {
-    const value = e.target.value === '' ? null : readField(v, e.target);
-    if (value === null) delete f.properties[v.key]; else f.properties[v.key] = value;
-    f.properties.inputs_src = 'entered';
-    saveStore();
+    if (trial) {
+      if (!requireEdit()) { updatePanel(); return; }
+      scenario.trials[scenario.source][v.key] = readField(v, e.target, v.auto);
+      saveScenario(); shareTrials();
+    } else if (v.scope === 'weather') {
+      scenario.custom[v.key] = readField(v, e.target);
+      scenario.custom.source = 'Weather edited by hand.';
+      saveScenario();
+    } else {
+      if (!requireEdit()) { updatePanel(); return; }
+      const value = e.target.value === '' ? null : readField(v, e.target);
+      if (value === null) delete f.properties[v.key]; else f.properties[v.key] = value;
+      f.properties.inputs_src = 'entered';
+      saveStore();
+    }
   } catch (err) { showHint(err.message, 6000); }
+  updateWind();
   updatePanel();
 });
+
+// ---------- close, and the "How to run a fire" guide ----------
+const GUIDE_KEY = 'ignisshield-map3d.guide-hidden';
+let guideHidden = (() => { try { return localStorage.getItem(GUIDE_KEY) === '1'; } catch { return false; } })();
+function updateGuide() {
+  const busy = Boolean(selected()) || !fui.playback.hidden || Boolean(drawing) || (typeof pathDraft !== 'undefined' && pathDraft);
+  fui.guide.hidden = guideHidden || busy;
+}
+fui.guideHide.addEventListener('click', () => { guideHidden = true; try { localStorage.setItem(GUIDE_KEY, '1'); } catch { /* not remembered */ } updateGuide(); });
+fui.help.addEventListener('click', () => { guideHidden = false; try { localStorage.removeItem(GUIDE_KEY); } catch { /* ignore */ } select(null); updateGuide(); });
+fui.panelClose.addEventListener('click', () => select(null));
 
 /** The nine paper inputs used for a building in the current scenario. */
 function buildingPaperValues(f) {
@@ -301,7 +317,7 @@ async function startFire() {
       sessionRuns.set(id, {id, result, features, ids, seed, wind});
       const out = P.outputs(result.metrics);
       records.push({
-        id, batch, utc, run_in_batch: k + 1, scenario: trial ? `Trial ${scenario.source} (${trial.level})` : 'Custom',
+        id, batch, utc, run_in_batch: k + 1, scenario: trial ? `Trial ${scenario.source} conditions` : 'Custom',
         ignition: origin.properties.id, seed, max_minutes: scenario.minutes, n_buildings: features.length,
         extent: scenario.boundaryOnly ? 'study boundary' : 'all mapped buildings', inputs: trial ? 'trial values, all buildings' : 'per building + weather',
         X1_Db: x.Db ?? `measured ${local.Db.toFixed(5)}`, X2_Mb_MJ_m2: x.Mb, X3_O2_ratio: x.O2, X4_Hr_pct: x.Hr, X5_Ta_C: x.Ta,
@@ -343,9 +359,13 @@ function showRun(id) {
   fui.batchRun.value = id;
   shown = new Uint8Array(run.features.length);
   fui.frame.max = run.result.frames.length - 1;
-  fui.metrics.innerHTML = P.outputs(run.result.metrics).map(o =>
+  const outs = P.outputs(run.result.metrics), sf = outs[0].value, lvl = P.level(sf);
+  // The severity is the result of the run (Y1), shown first
+  fui.headline.innerHTML = `Final result: <span class="sev sev-${lvl.toLowerCase()}">${lvl}</span> severity · Sf ${sf.toFixed(3)} · ${Math.round(outs[4].value).toLocaleString()} m² burned · ${outs[7].text.split(' · ')[0]}`;
+  fui.metrics.innerHTML = outs.map(o =>
     `<div class="metric"><span>${o.sym} ${o.name}</span><strong>${o.text}</strong><small>${o.unit}</small></div>`).join('');
   fui.playback.hidden = false;
+  updateGuide();
   displayMinute = 0;
   showFrame(0);
   play();
@@ -499,6 +519,7 @@ function clearFire() {
   map.setPaintProperty('buildings-3d', 'fill-extrusion-color', buildingColor(FIRE.burnA));
   map.setPaintProperty('buildings-2d', 'fill-color', buildingColor(FIRE.burnA));
   fui.playback.hidden = true;
+  updateGuide();
   if (typeof onFireFrame === 'function') onFireFrame();
 }
 
@@ -553,3 +574,4 @@ fui.wxLoad.addEventListener('click', loadWeather);
 fui.wxHour.addEventListener('change', () => applyWeather(Number(fui.wxHour.value)));
 
 renderScenario();
+updateGuide();

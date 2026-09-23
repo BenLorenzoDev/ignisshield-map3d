@@ -58,7 +58,7 @@ Everything is saved in this browser's storage (`localStorage`, key `ignisshield-
 
 The app follows the paper's Chapter 2 notation: nine inputs X1–X9 and eight outputs Y1–Y8, in the paper's units. Two unit typos in the paper's table are corrected here: alley/road width is metres (the paper says °) and wind direction is degrees (the paper says metres).
 
-**Inputs.** Click a building; its panel has the five per-building inputs:
+**Inputs.** Click a building: one form shows all nine inputs in the paper's order (X1–X9), then **Start fire here**. Five belong to the building:
 - **Db** building density (structures/m²): blank means measured from the map, as structures within 30 m per m²;
 - **Mb** fuel load density (MJ/m²);
 - **O₂** oxygen availability (ratio φO₂, 1 = normal air, 20.9 %);
@@ -75,12 +75,14 @@ The app follows the paper's Chapter 2 notation: nine inputs X1–X9 and eight ou
 
 **Trials A–D** (paper Table 1) are one-click presets whose nine values replace every building's inputs. The paper describes the trials only in words, so their numbers are **drafts**. Edit them in the panel or use *Reset this trial to the draft values*.
 
-| Trial | Level | Db | Mb | O₂ | Hr | Ta | Nh | Wr | Uw | Θw |
-|---|---|---|---|---|---|---|---|---|---|---|
-| A | Low | measured | 600 | 1.0 | 85 | 27 | 1 | 4 | 1 | 45 |
-| B | Moderate | measured | 900 | 1.0 | 70 | 31 | 2 | 3 | 4 | 45 |
-| C | High | 0.004 | 1200 | 1.0 | 55 | 33 | 2 | 1.5 | 7 | 225 |
-| D | Catastrophic | 0.006 | 1500 | 1.2 | 35 | 36 | 3 | 1 | 10 | 225 |
+| Trial conditions | Db | Mb | O₂ | Hr | Ta | Nh | Wr | Uw | Θw |
+|---|---|---|---|---|---|---|---|---|---|
+| A (baseline) | measured | 600 | 1.0 | 85 | 27 | 1 | 4 | 1 | 45 |
+| B | measured | 900 | 1.0 | 70 | 31 | 2 | 3 | 4 | 45 |
+| C | 0.004 | 1200 | 1.0 | 55 | 33 | 2 | 1.5 | 7 | 225 |
+| D (worst case) | 0.006 | 1500 | 1.2 | 35 | 36 | 3 | 1 | 10 | 225 |
+
+The presets are **input conditions only**. The severity level (Low / Moderate / High / Catastrophic) is never chosen: it is an **output** of each run, from Sf (Y1), shown as the result headline and logged with every run. The paper expects conditions A–D to produce roughly increasing severity; the runs test whether they do.
 
 For reference, measured Db on the current map has a median of 0.0021 structures/m², a 90th percentile of 0.0039 and a 99th of 0.0057.
 

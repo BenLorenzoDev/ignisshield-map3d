@@ -28,31 +28,80 @@
     </div>
     <button id="trace" class="primary">Trace building</button>
     <button id="draw-path" class="primary">Draw path</button>
-    <button id="scenario-btn" aria-pressed="false">Scenario &amp; runs</button>
     <button id="routes-btn" aria-pressed="false">Routes</button>
     <button id="log-btn" aria-pressed="false">Run log (<span id="log-count">0</span>)</button>
+    <button id="help-btn" title="How to run a fire">? Help</button>
     <button id="account-btn" aria-pressed="false">Sign in</button>
     <button id="export">Export (<span id="count">0</span>)</button>
   </div>
   <div id="hint" hidden></div>
 
   <div id="panel" hidden>
-    <strong id="panel-title">Building</strong>
-    <div id="panel-source" class="muted small"></div>
-    <label>Storeys <input id="storeys" type="number" min="1" max="20" step="1"></label>
-    <div class="muted">Height: <span id="height">3</span> m (3 m per storey)</div>
-    <div id="edit-hint" class="muted small">Drag a yellow corner to move it. Drag a white dot to add a corner. Click a corner, then press Delete to remove it. Drag inside the shape to move the whole building.</div>
-    <div class="row">
-      <button id="remove-corner">Remove corner</button>
-      <button id="revert">Revert shape</button>
+    <div class="panel-head">
+      <strong id="panel-title">Building</strong>
+      <button id="panel-close" class="icon" aria-label="Close" title="Close">×</button>
     </div>
-    <button id="delete" class="danger">Delete building</button>
-    <details class="fire-inputs" open>
-      <summary>Fire inputs for this building</summary>
-      <div id="building-inputs"></div>
+    <div id="panel-source" class="muted small"></div>
+
+    <section class="step">
+      <h3><span class="num">1</span> Fire inputs <span class="muted small">paper X1–X9</span></h3>
+      <label class="field"><span>Preset</span>
+        <select id="scenario-source">
+          <option value="custom">Custom: the values below</option>
+          <option value="A">Trial A conditions</option>
+          <option value="B">Trial B conditions</option>
+          <option value="C">Trial C conditions</option>
+          <option value="D">Trial D conditions</option>
+        </select>
+      </label>
+      <div id="trial-text" class="muted small"></div>
+      <div id="x-inputs" class="x-table"></div>
+      <div id="live-weather" class="live">
+        <div class="row">
+          <button id="wx-load" class="primary-soft">Use live weather for X4, X5, X8, X9</button>
+          <select id="wx-hour" aria-label="Forecast hour" hidden></select>
+        </div>
+        <div id="wx-status" class="muted small"></div>
+      </div>
+      <button id="reset-trial" class="soft" hidden>Reset this trial to the draft values</button>
       <div id="inputs-note" class="muted small"></div>
+    </section>
+
+    <details class="step">
+      <summary><span class="num">2</span> Run settings <span class="muted small">optional</span></summary>
+      <div id="run-inputs"></div>
+      <label class="check"><input id="boundary-only" type="checkbox"> Only buildings inside the study boundary</label>
+      <details>
+        <summary class="small">How the inputs feed the model (draft)</summary>
+        <ul id="rules" class="small"></ul>
+        <p class="muted small">The paper has no formulas yet, so these conversions are provisional and all live in <code>paper.js</code>.</p>
+      </details>
+      <div class="muted small">Uncalibrated IgnisShield research model 0.4.0, the same model IgnisShield-Web uses. Not a forecast. The same seed always gives the same run.</div>
     </details>
-    <button id="ignite" class="fire">Start fire here</button>
+
+    <button id="ignite" class="fire big"><span class="num">3</span> Start fire here</button>
+
+    <details class="step" id="shape-section">
+      <summary>Edit this building (shape, storeys, delete)</summary>
+      <label>Storeys <input id="storeys" type="number" min="1" max="20" step="1"></label>
+      <div class="muted">Height: <span id="height">3</span> m (3 m per storey)</div>
+      <div id="edit-hint" class="muted small">Drag a yellow corner to move it. Drag a white dot to add a corner. Click a corner, then press Delete to remove it. Drag inside the shape to move the whole building.</div>
+      <div class="row">
+        <button id="remove-corner">Remove corner</button>
+        <button id="revert">Revert shape</button>
+      </div>
+      <button id="delete" class="danger">Delete building</button>
+    </details>
+  </div>
+
+  <div id="guide" hidden>
+    <div class="panel-head"><strong>How to run a fire</strong><button id="guide-hide" class="icon" aria-label="Hide" title="Hide">×</button></div>
+    <ol>
+      <li><b>Click any building</b> on the map.</li>
+      <li>Check its <b>nine inputs (X1–X9)</b>, or pick a <b>Trial</b> preset.</li>
+      <li>Press <b>Start fire here</b>. Watch it spread; the <b>outputs (Y1–Y8)</b> appear at the bottom.</li>
+    </ol>
+    <div class="muted small">Missing houses: <b>Satellite</b> → <b>Trace building</b>. Alleys: <b>Draw path</b>. Escape routes: <b>Routes</b>. Past results: <b>Run log</b>.</div>
   </div>
 
   <div id="path-panel" hidden>
@@ -63,38 +112,6 @@
     <label class="field"><span>Note</span><input id="path-note" type="text" maxlength="200" placeholder="e.g. 1.1 m at the sari-sari store"></label>
     <div class="muted small">Used by Routes: walking routes can use every path; fire-truck routes only paths marked for cars and at least as wide as the truck needs.</div>
     <button id="path-delete" class="danger">Delete path</button>
-  </div>
-
-  <div id="scenario" class="side" hidden>
-    <strong>Scenario &amp; runs</strong>
-    <label class="field"><span>Inputs for the run</span>
-      <select id="scenario-source">
-        <option value="custom">Custom: each building's own values</option>
-        <option value="A">Trial A · Low</option>
-        <option value="B">Trial B · Moderate</option>
-        <option value="C">Trial C · High</option>
-        <option value="D">Trial D · Catastrophic</option>
-      </select>
-    </label>
-    <div id="trial-text" class="muted small"></div>
-    <div id="live-weather" class="live">
-      <div class="row">
-        <button id="wx-load" class="primary-soft">Use live weather</button>
-        <select id="wx-hour" aria-label="Forecast hour" hidden></select>
-      </div>
-      <div id="wx-status" class="muted small"></div>
-    </div>
-    <div id="scenario-inputs"></div>
-    <button id="reset-trial" class="soft" hidden>Reset this trial to the draft values</button>
-    <hr>
-    <div id="run-inputs"></div>
-    <label class="check"><input id="boundary-only" type="checkbox"> Only buildings inside the study boundary</label>
-    <details>
-      <summary>How paper units become model inputs (draft)</summary>
-      <ul id="rules" class="small"></ul>
-      <p class="muted small">The paper has no formulas yet, so these conversions are provisional and all live in <code>paper.js</code>.</p>
-    </details>
-    <div class="muted small">Uncalibrated IgnisShield research model 0.4.0, the same model IgnisShield-Web uses. Not a forecast. The same seed always gives the same run.</div>
   </div>
 
   <div id="routes" class="side" hidden>
@@ -164,8 +181,9 @@
       <span class="legend"><i style="background:#ff5a1f"></i>Burning <i style="background:#2a2522"></i>Burned</span>
       <span id="run-status" class="muted"></span>
     </div>
+    <div id="result-headline"></div>
     <details open>
-      <summary>Outputs (paper Y1–Y8)</summary>
+      <summary>All outputs (paper Y1–Y8)</summary>
       <div id="metrics"></div>
       <ul id="output-notes" class="muted small"></ul>
     </details>

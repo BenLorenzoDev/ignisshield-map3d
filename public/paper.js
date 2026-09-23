@@ -82,15 +82,16 @@
     };
   }
 
-  // ---------- Trials A–D (paper Table 1). Numbers are DRAFT placeholders: the paper describes them only in words. ----------
+  // ---------- Trials A–D (paper Table 1): input CONDITIONS. Numbers are DRAFT placeholders: the paper describes them only in words.
+  // The severity level is an output of each run (Sf, Y1), never an input.
   const TRIALS = {
-    A: {level: 'Low', text: 'Baseline: moderate density, lower fuel load, high humidity, calm wind, wider alleys.',
+    A: {text: 'Baseline: moderate density, lower fuel load, high humidity, calm wind, wider alleys.',
       values: {Db: null, Mb: 600, O2: 1, Hr: 85, Ta: 27, Nh: 1, Wr: 4, Uw: 1, Tw: 45}},
-    B: {level: 'Moderate', text: 'More flammable construction; wind speed and temperature moderately higher.',
+    B: {text: 'More flammable construction; wind speed and temperature moderately higher.',
       values: {Db: null, Mb: 900, O2: 1, Hr: 70, Ta: 31, Nh: 2, Wr: 3, Uw: 4, Tw: 45}},
-    C: {level: 'High', text: 'Denser buildings, narrower alleys, lower humidity, stronger wind (SW monsoon direction).',
+    C: {text: 'Denser buildings, narrower alleys, lower humidity, stronger wind (SW monsoon direction).',
       values: {Db: 0.004, Mb: 1200, O2: 1, Hr: 55, Ta: 33, Nh: 2, Wr: 1.5, Uw: 7, Tw: 225}},
-    D: {level: 'Catastrophic', text: 'Worst case: maximum density, highly combustible materials, minimal humidity, high heat, strong wind, narrowest alleys.',
+    D: {text: 'Worst case: maximum density, highly combustible materials, minimal humidity, high heat, strong wind, narrowest alleys.',
       values: {Db: 0.006, Mb: 1500, O2: 1.2, Hr: 35, Ta: 36, Nh: 3, Wr: 1, Uw: 10, Tw: 225}}
   };
 

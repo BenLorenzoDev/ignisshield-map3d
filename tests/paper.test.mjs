@@ -30,7 +30,7 @@ test('out-of-range and non-integer inputs are refused', () => {
 });
 test('every draft trial converts to valid model inputs', () => {
   const F = require('../public/fire.js');
-  for (const [k, t] of Object.entries(P.TRIALS)) F.validate(P.toModel(t.values, local)), assert.ok(t.level, k);
+  for (const [k, t] of Object.entries(P.TRIALS)) { F.validate(P.toModel(t.values, local)); assert.equal(t.level, undefined, `${k}: severity is an output, not a preset`); }
 });
 test('severity levels use the paper names', () => {
   assert.deepEqual([0, 0.099, 0.1, 0.29, 0.3, 0.59, 0.6, 1].map(P.level), ['Low', 'Low', 'Moderate', 'Moderate', 'High', 'High', 'Catastrophic', 'Catastrophic']);

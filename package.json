@@ -1,0 +1,16 @@
+{
+  "name": "ignisshield-map3d",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "vendor": "node scripts/vendor.mjs",
+    "test": "node tests/paper.test.mjs && node tests/parity.mjs && node tests/routing-parity.mjs",
+    "test:paper": "node tests/paper.test.mjs",
+    "test:parity": "node tests/parity.mjs",
+    "test:routing": "node tests/routing-parity.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.0",
+    "maplibre-gl": "5.24.0"
+  }
+}

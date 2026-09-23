@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IgnisShield Map 3D</title>
+  <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="map"></div>
+  <div id="toolbar">
+    <div id="title">IgnisShield · Sitio Polo, Balamban</div>
+    <div class="group" role="group" aria-label="Base map">
+      <button data-base="map" aria-pressed="true">Map</button>
+      <button data-base="satellite" aria-pressed="false">Satellite</button>
+    </div>
+    <div class="group" role="group" aria-label="View">
+      <button data-view="2d" aria-pressed="false">2D</button>
+      <button data-view="3d" aria-pressed="true">3D</button>
+    </div>
+    <div class="group layers">
+      <label><input id="show-ai" type="checkbox" checked> AI outlines</label>
+      <label><input id="show-inventory" type="checkbox" checked> Inventory</label>
+      <label><input id="show-roads" type="checkbox" checked> Roads</label>
+    </div>
+    <button id="trace" class="primary">Trace building</button>
+    <button id="scenario-btn" aria-pressed="false">Scenario &amp; runs</button>
+    <button id="routes-btn" aria-pressed="false">Routes</button>
+    <button id="log-btn" aria-pressed="false">Run log (<span id="log-count">0</span>)</button>
+    <button id="account-btn" aria-pressed="false">Sign in</button>
+    <button id="export">Export (<span id="count">0</span>)</button>
+  </div>
+  <div id="hint" hidden></div>
+
+  <div id="panel" hidden>
+    <strong id="panel-title">Building</strong>
+    <div id="panel-source" class="muted small"></div>
+    <label>Storeys <input id="storeys" type="number" min="1" max="20" step="1"></label>
+    <div class="muted">Height: <span id="height">3</span> m (3 m per storey)</div>
+    <div id="edit-hint" class="muted small">Drag a yellow corner to move it. Drag a white dot to add a corner. Click a corner, then press Delete to remove it. Drag inside the shape to move the whole building.</div>
+    <div class="row">
+      <button id="remove-corner">Remove corner</button>
+      <button id="revert">Revert shape</button>
+    </div>
+    <button id="delete" class="danger">Delete building</button>
+    <details class="fire-inputs" open>
+      <summary>Fire inputs for this building</summary>
+      <div id="building-inputs"></div>
+      <div id="inputs-note" class="muted small"></div>
+    </details>
+    <button id="ignite" class="fire">Start fire here</button>
+  </div>
+
+  <div id="scenario" class="side" hidden>
+    <strong>Scenario &amp; runs</strong>
+    <label class="field"><span>Inputs for the run</span>
+      <select id="scenario-source">
+        <option value="custom">Custom: each building's own values</option>
+        <option value="A">Trial A · Low</option>
+        <option value="B">Trial B · Moderate</option>
+        <option value="C">Trial C · High</option>
+        <option value="D">Trial D · Catastrophic</option>
+      </select>
+    </label>
+    <div id="trial-text" class="muted small"></div>
+    <div id="live-weather" class="live">
+      <div class="row">
+        <button id="wx-load" class="primary-soft">Use live weather</button>
+        <select id="wx-hour" aria-label="Forecast hour" hidden></select>
+      </div>
+      <div id="wx-status" class="muted small"></div>
+    </div>
+    <div id="scenario-inputs"></div>
+    <button id="reset-trial" class="soft" hidden>Reset this trial to the draft values</button>
+    <hr>
+    <div id="run-inputs"></div>
+    <label class="check"><input id="boundary-only" type="checkbox"> Only buildings inside the study boundary</label>
+    <details>
+      <summary>How paper units become model inputs (draft)</summary>
+      <ul id="rules" class="small"></ul>
+      <p class="muted small">The paper has no formulas yet, so these conversions are provisional and all live in <code>paper.js</code>.</p>
+    </details>
+    <div class="muted small">Uncalibrated IgnisShield research model 0.4.0, the same model IgnisShield-Web uses. Not a forecast. The same seed always gives the same run.</div>
+  </div>
+
+  <div id="routes" class="side" hidden>
+    <strong>Routes</strong>
+    <div class="grid2">
+      <label class="field"><span>Who is moving</span><select id="rt-mode"><option>Walking</option><option>Fire engine</option></select></label>
+      <label class="field"><span>Task</span><select id="rt-purpose"><option value="Evacuation">Reach a destination</option><option value="Checkpoints">Visit checkpoints</option></select></label>
+      <label class="field"><span>Speed <i>km/h</i></span><input id="rt-speed" type="number" min="0.1" max="120" step="0.1" value="4.5"></label>
+      <label class="field"><span>Minimum width <i>m</i></span><input id="rt-width" type="number" min="0.1" max="20" step="0.1" value="0.8"></label>
+    </div>
+    <label class="check"><input id="rt-avoid" type="checkbox"> Avoid the fire at the minute on screen</label>
+    <label class="field"><span>Distance from burning or burned buildings <i>m</i></span><input id="rt-clearance" type="number" min="0" max="100" step="1" value="8"></label>
+    <div id="rt-usable" class="muted small"></div>
+    <div class="row">
+      <button id="pick-start" aria-pressed="false">Pick start</button>
+      <button id="pick-end" aria-pressed="false">Pick destination</button>
+    </div>
+    <div id="rt-stops-row" class="row" hidden>
+      <button id="pick-stops" aria-pressed="false">Add checkpoints</button>
+      <label class="check"><input id="rt-return" type="checkbox"> Return to start</label>
+    </div>
+    <div id="rt-picks" class="small"></div>
+    <div class="row">
+      <button id="rt-find" class="primary-soft">Find routes</button>
+      <button id="clear-picks">Clear</button>
+    </div>
+    <div id="rt-result"></div>
+    <div class="muted small legend-roads"><i style="background:#e53935"></i>&lt; 2 m <i style="background:#fb8c00"></i>&lt; 3.5 m <i style="background:#fdd835"></i>&lt; 5 m <i style="background:#9e9e9e"></i>wider · road widths are OSM-based assumptions by road class</div>
+  </div>
+
+  <div id="account" class="side" hidden>
+    <strong>Shared class map</strong>
+    <div id="account-body"></div>
+  </div>
+
+  <div id="log" class="side wide" hidden>
+    <strong>Run log</strong>
+    <div class="row">
+      <button id="log-csv" class="primary-soft">Export CSV</button>
+      <button id="log-clear">Clear log</button>
+    </div>
+    <div id="log-body"></div>
+  </div>
+
+  <div id="playback" hidden>
+    <div class="row playback-row">
+      <button id="play">Pause</button>
+      <button id="restart">Replay</button>
+      <input id="frame" type="range" min="0" max="0" step="1" value="0" aria-label="Model minute">
+      <span id="minute"></span>
+      <select id="speed" aria-label="Playback speed">
+        <option value="1">1 min/s</option>
+        <option value="2" selected>2 min/s</option>
+        <option value="4">4 min/s</option>
+        <option value="8">8 min/s</option>
+      </select>
+      <button id="clear-fire">Clear fire</button>
+    </div>
+    <div class="row playback-row small">
+      <select id="batch-run" aria-label="Run in this batch"></select>
+      <span id="wind-arrow" aria-hidden="true">↑</span><span id="wind-text"></span>
+      <span class="legend"><i style="background:#ff5a1f"></i>Burning <i style="background:#2a2522"></i>Burned</span>
+      <span id="run-status" class="muted"></span>
+    </div>
+    <details open>
+      <summary>Outputs (paper Y1–Y8)</summary>
+      <div id="metrics"></div>
+      <ul id="output-notes" class="muted small"></ul>
+    </details>
+  </div>
+
+  <script src="vendor/maplibre-gl/maplibre-gl.js"></script>
+  <script src="vendor/supabase/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="cloud.js"></script>
+  <script src="fire.js"></script>
+  <script src="paper.js"></script>
+  <script src="routing.js"></script>
+  <script src="app.js"></script>
+  <script src="fire-ui.js"></script>
+  <script src="route-ui.js"></script>
+  <script src="cloud-ui.js"></script>
+</body>
+</html>

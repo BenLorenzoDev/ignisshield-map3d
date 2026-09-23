@@ -21,8 +21,7 @@ const fui = {
 // ---------- scenario settings (saved in this browser) ----------
 const RUN_FIELDS = [
   {key: 'seed', name: 'Replay number', unit: '', min: 0, max: 2147483647, step: 1},
-  {key: 'repeats', name: 'Number of runs', unit: '', min: 1, max: 20, step: 1},
-  {key: 'minutes', name: 'Maximum model minutes', unit: 'min', min: 1, max: 240, step: 1}
+  {key: 'repeats', name: 'Number of runs', unit: '', min: 1, max: 20, step: 1}
 ];
 const draftTrials = () => JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(P.TRIALS).map(([k, t]) => [k, t.values]))));
 function loadScenario() {
@@ -32,7 +31,7 @@ function loadScenario() {
     s = {custom: {Hr: s.humidity, Ta: s.temp_c, Tw: s.wind_dir, Uw: Math.round(s.wind_spd / 3.6 * 10) / 10}, seed: s.seed, minutes: s.minutes};
   }
   const weather = Object.fromEntries(P.INPUTS.filter(v => v.scope === 'weather').map(v => [v.key, v.def]));
-  return {source: 'custom', seed: 42, repeats: 3, minutes: 60, boundaryOnly: false, ...s,
+  return {source: 'custom', seed: 42, repeats: 3, minutes: 60, speed: '0.5', boundaryOnly: false, ...s,
     custom: {...weather, ...s.custom}, trials: {...draftTrials(), ...s.trials}};
 }
 const scenario = loadScenario();
@@ -47,10 +46,27 @@ function readField(v, input, allowBlank = false) {
 function renderScenario() {
   fui.runInputs.innerHTML = RUN_FIELDS.map(v => `<label class="field" data-info="${v.key}"><span>${v.name} <span class="x-i">ⓘ</span></span><input id="run-${v.key}" type="number" min="${v.min}" max="${v.max}" step="${v.step}" value="${scenario[v.key]}"></label>`).join('');
   fui.boundaryOnly.checked = scenario.boundaryOnly;
+  renderSim();
   updateWind();
   if (selected()) updatePanel();
 }
 fui.rules.innerHTML = P.RULE_TEXT.map(t => `<li>${t}</li>`).join('');
+const simMinutes = $('#sim-minutes'), simSpeed = $('#sim-speed'), simNote = $('#sim-note');
+function renderSim() {
+  simMinutes.value = scenario.minutes;
+  simSpeed.value = scenario.speed;
+  fui.speed.value = scenario.speed;
+  const x = Math.round(Number(scenario.speed) * 60), watch = scenario.minutes / Number(scenario.speed) / 60; // real minutes to watch
+  simNote.textContent = x <= 1
+    ? `Plays in real time: people walk at their true pace and the ${scenario.minutes}-minute fire takes ${scenario.minutes} minutes to watch.`
+    : `Plays ${x}× faster than real time: the ${scenario.minutes}-minute fire takes about ${watch < 1 ? Math.round(watch * 60) + ' seconds' : Math.round(watch * 10) / 10 + ' minutes'} to watch.`;
+}
+simMinutes.addEventListener('change', () => {
+  const n = Number(simMinutes.value);
+  if (!Number.isInteger(n) || n < 1 || n > 240) { showHint('Simulation time must be a whole number of minutes from 1 to 240.', 6000); renderSim(); return; }
+  scenario.minutes = n; saveScenario(); renderSim();
+});
+simSpeed.addEventListener('change', () => { scenario.speed = simSpeed.value; saveScenario(); renderSim(); });
 fui.outputNotes.innerHTML = P.OUTPUT_NOTES.map(t => `<li>${t}</li>`).join('');
 
 fui.runInputs.addEventListener('change', e => {
@@ -189,7 +205,7 @@ const HELP = {
     what: 'How many times to simulate the same inputs, each with the next replay number (42, 43, 44, …). Each run is one possible outcome of the same conditions.',
     get: 'The paper runs each trial three times; more runs give a more reliable result. Report the average and the spread (± SD) from the Run log, not a single run.',
     sim: 'Together the runs show the typical outcome and how much it can vary, which is how probabilistic simulations, weather forecasts and engineering risk studies report their results.'},
-  minutes: {title: 'Maximum model minutes',
+  minutes: {title: 'Simulation time',
     what: 'The longest time the simulated fire is allowed to burn (1–240 minutes).',
     get: 'Use 60 for a first look. Try the time the fire truck needs to arrive to see what burns before help comes.',
     sim: 'The run stops earlier if the fire goes out. Total simulation time (Y8) can never be longer than this.'},
@@ -762,6 +778,7 @@ function setResults(show) {
 }
 fui.frame.addEventListener('input', () => { pause(); displayMinute = Number(fui.frame.value); showFrame(displayMinute); });
 fui.clearFire.addEventListener('click', clearFire);
+fui.speed.addEventListener('change', () => { scenario.speed = fui.speed.value; saveScenario(); renderSim(); });
 
 // ---------- live weather (Open-Meteo: free, no key, CC BY 4.0) ----------
 // Wind is the 10 m model value for the grid cell over Sitio Polo; street-level wind in narrow alleys is usually lower.

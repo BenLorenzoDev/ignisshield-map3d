@@ -84,8 +84,27 @@
       <div id="inputs-note" class="muted small"></div>
     </section>
 
+    <section class="step" id="sim-step">
+      <h3><span class="num">2</span> Simulation</h3>
+      <div class="grid2">
+        <label class="field" data-info="minutes"><span>Simulation time <i>min</i> <span class="x-i">ⓘ</span></span>
+          <input id="sim-minutes" type="number" min="1" max="240" step="1"></label>
+        <label class="field" data-info="speed"><span>Playback speed <span class="x-i">ⓘ</span></span>
+          <select id="sim-speed">
+          <option value="0.016667">Real time</option>
+          <option value="0.1">6× faster</option>
+          <option value="0.25">15× faster</option>
+          <option value="0.5">30× faster</option>
+          <option value="1">60× faster</option>
+          <option value="2">120× faster</option>
+          <option value="4">240× faster</option>
+          </select></label>
+      </div>
+      <div id="sim-note" class="muted small"></div>
+    </section>
+
     <details class="step">
-      <summary><span class="num">2</span> Run settings <span class="muted small">optional</span></summary>
+      <summary>More run settings <span class="muted small">optional</span></summary>
       <div id="run-inputs"></div>
       <label class="check" data-info="boundary"><input id="boundary-only" type="checkbox"> Only buildings inside the study boundary <span class="x-i">ⓘ</span></label>
       <details>

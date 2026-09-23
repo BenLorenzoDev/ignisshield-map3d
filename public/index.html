@@ -199,12 +199,18 @@
       <span class="legend"><i style="background:#ff5a1f"></i>Burning <i style="background:#2a2522"></i>Burned</span>
       <span id="run-status" class="muted"></span>
     </div>
-    <div id="result-headline"></div>
-    <details open>
-      <summary>All outputs (paper Y1–Y8)</summary>
-      <div id="metrics"></div>
-      <ul id="output-notes" class="muted small"></ul>
-    </details>
+    <div id="running-note" class="row">
+      <span class="muted">Simulating… the results (severity and outputs Y1–Y8) appear when the fire finishes.</span>
+      <button id="skip-results" class="soft">Skip to results</button>
+    </div>
+    <div id="results" hidden>
+      <div id="result-headline"></div>
+      <details open>
+        <summary>All outputs (paper Y1–Y8)</summary>
+        <div id="metrics"></div>
+        <ul id="output-notes" class="muted small"></ul>
+      </details>
+    </div>
   </div>
 
   <script src="vendor/maplibre-gl/maplibre-gl.js"></script>

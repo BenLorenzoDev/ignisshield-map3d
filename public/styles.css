@@ -161,3 +161,9 @@ button.fire.big { padding: 10px; font-size: 15px; }
 .x-row[data-info], #panel input, #panel select { cursor: auto; }
 .metric[data-info]:hover, .metric[data-info]:focus { outline: 2px solid #d9480f; outline-offset: -2px; }
 .field .x-i, .check .x-i { display: inline; margin-left: 2px; }
+/* results appear when the fire finishes */
+#running-note { justify-content: space-between; align-items: center; font-size: 13px; background: #fff8e1; border-radius: 6px; padding: 6px 8px; }
+#results.reveal { animation: results-in .5s ease-out; }
+@keyframes results-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+#results { display: grid; gap: 6px; }
+#results[hidden] { display: none; }

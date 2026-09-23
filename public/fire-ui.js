@@ -12,7 +12,7 @@ const fui = {
   boundaryOnly: $('#boundary-only'), panelClose: $('#panel-close'), guide: $('#guide'), guideHide: $('#guide-hide'), help: $('#help-btn'),
   playback: $('#playback'), play: $('#play'), restart: $('#restart'), frame: $('#frame'), minute: $('#minute'),
   speed: $('#speed'), status: $('#run-status'), windArrow: $('#wind-arrow'), windText: $('#wind-text'),
-  metrics: $('#metrics'), headline: $('#result-headline'), clearFire: $('#clear-fire'), batchRun: $('#batch-run'), outputNotes: $('#output-notes'),
+  metrics: $('#metrics'), headline: $('#result-headline'), results: $('#results'), runningNote: $('#running-note'), skip: $('#skip-results'), clearFire: $('#clear-fire'), batchRun: $('#batch-run'), outputNotes: $('#output-notes'),
   logBtn: $('#log-btn'), log: $('#log'), logBody: $('#log-body'), logCount: $('#log-count'),
   logCsv: $('#log-csv'), logClear: $('#log-clear'),
   live: $('#weather-block'), wxLoad: $('#wx-load'), wxHour: $('#wx-hour'), wxStatus: $('#wx-status')
@@ -389,7 +389,8 @@ function runBuildings() {
 // ---------- wind indicator ----------
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 function updateWind() {
-  const w = P.TRIALS[scenario.source] ? scenario.trials[scenario.source] : scenario.custom;
+  // during playback, describe the wind the run on screen used
+  const w = run ? run.wind : P.TRIALS[scenario.source] ? scenario.trials[scenario.source] : scenario.custom;
   fui.windArrow.style.transform = `rotate(${(w.Tw + 180 - map.getBearing()) % 360}deg)`; // arrow points where the wind blows TO
   fui.windText.textContent = `Wind from ${COMPASS[Math.round(w.Tw / 45) % 8]} (${w.Tw}°), ${w.Uw} m/s`;
 }
@@ -550,6 +551,8 @@ function showRun(id) {
   fui.headline.innerHTML = `Final result: <span class="sev sev-${lvl.toLowerCase()}">${lvl}</span> severity · Sf ${sf.toFixed(3)} · ${Math.round(outs[4].value).toLocaleString()} m² burned · ${outs[7].text.split(' · ')[0]}`;
   fui.metrics.innerHTML = outs.map((o, i) =>
     `<div class="metric" data-info="out-${i}" tabindex="0"><span>${o.sym} ${o.name}</span><strong>${o.text}</strong><small>${o.unit}</small></div>`).join('');
+  setResults(false);
+  updateWind();
   fui.playback.hidden = false;
   updateGuide();
   displayMinute = 0;
@@ -642,6 +645,7 @@ function showFrame(k) {
   fui.frame.value = k;
   fui.minute.textContent = `Minute ${minute} of ${frames.at(-1).minute}`;
   fui.status.textContent = `${row.Burning} burning · ${row.Burned} burned${k === frames.length - 1 ? ` · ${run.result.status}` : ''}`;
+  if (k === frames.length - 1) setResults(true);
   paintFire();
   if (typeof onFireFrame === 'function') onFireFrame();
 }
@@ -711,7 +715,15 @@ function clearFire() {
 
 fui.ignite.addEventListener('click', startFire);
 fui.play.addEventListener('click', () => (playTimer ? pause() : play()));
-fui.restart.addEventListener('click', () => { displayMinute = 0; showFrame(0); play(); });
+fui.restart.addEventListener('click', () => { setResults(false); displayMinute = 0; showFrame(0); play(); });
+fui.skip.addEventListener('click', () => { pause(); displayMinute = run.result.frames.length - 1; showFrame(displayMinute); });
+/** Results (severity headline and Y1–Y8) are shown only once the simulated fire has finished. */
+function setResults(show) {
+  fui.results.hidden = !show;
+  fui.runningNote.hidden = show;
+  if (show) { fui.results.classList.remove('reveal'); void fui.results.offsetWidth; fui.results.classList.add('reveal'); }
+  else if (infoAnchor?.closest?.('#results')) hideInfo();
+}
 fui.frame.addEventListener('input', () => { pause(); displayMinute = Number(fui.frame.value); showFrame(displayMinute); });
 fui.clearFire.addEventListener('click', clearFire);
 

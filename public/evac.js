@@ -87,7 +87,36 @@
       const hit = nearestNodes(toM(s.lonlat), 60, 1)[0];
       if (hit) { safe.set(hit[0], s.name); areas.push({...s, node: hit[0]}); }
     }
-    const starts = B.map(b => nearestNodes(b.cm, maxStartM, 5));
+    // Getting from home to the first mapped road or alley means squeezing between houses: counted at half speed
+    const ACCESS_SLOWDOWN = 2;
+    // Where each household steps out: the nearest point on every street or alley within maxStartM (not only junctions)
+    const segGrid = new Map(), SEG = 40;
+    for (const [e, f] of base.edges) {
+      const line = lineOf(f.geometry), lm = line.map(toM);
+      let total = 0;
+      const cum = [0];
+      for (let k = 1; k < lm.length; k++) cum.push(total += dist(lm[k - 1], lm[k]));
+      const meta = {e, from: String(f.properties.from_node), to: String(f.properties.to_node), line, lm, cum, total};
+      for (let k = 0; k < lm.length - 1; k++) {
+        const [a, b] = [lm[k], lm[k + 1]];
+        for (let gx = Math.floor(Math.min(a[0], b[0]) / SEG); gx <= Math.floor(Math.max(a[0], b[0]) / SEG); gx++)
+          for (let gy = Math.floor(Math.min(a[1], b[1]) / SEG); gy <= Math.floor(Math.max(a[1], b[1]) / SEG); gy++) {
+            const key = gx + "," + gy;
+            if (!segGrid.has(key)) segGrid.set(key, []);
+            segGrid.get(key).push([meta, k]);
+          }
+      }
+    }
+    const starts = B.map(b => {
+      const best = new Map(), n = Math.ceil(maxStartM / SEG), gx = Math.floor(b.cm[0] / SEG), gy = Math.floor(b.cm[1] / SEG);
+      for (let dx = -n; dx <= n; dx++) for (let dy = -n; dy <= n; dy++) for (const [m, k] of segGrid.get((gx + dx) + "," + (gy + dy)) || []) {
+        const a = m.lm[k], c = m.lm[k + 1], vx = c[0] - a[0], vy = c[1] - a[1], L = vx * vx + vy * vy;
+        const t = L ? Math.max(0, Math.min(1, ((b.cm[0] - a[0]) * vx + (b.cm[1] - a[1]) * vy) / L)) : 0;
+        const q = [a[0] + t * vx, a[1] + t * vy], d = dist(q, b.cm);
+        if (d <= maxStartM && (!best.has(m.e) || d < best.get(m.e).d)) best.set(m.e, {m, k, t, d, at: m.cum[k] + t * Math.sqrt(L)});
+      }
+      return [...best.values()].sort((x, y) => x.d - y.d); // every street within reach: the nearest may be blocked by fire
+    });
 
     // Direction of travel along an edge: coordinates from node `from`
     const edgeLine = (e, from) => {
@@ -123,7 +152,7 @@
             if (nd < (d.get(v) ?? Infinity)) { d.set(v, nd); next.set(v, [u, e]); heap.push([nd, v]); }
           }
         }
-        const t = {d, next, unsafe};
+        const t = {d, next, unsafe, blocked};
         trees.set(m, t);
         return t;
       };
@@ -133,12 +162,31 @@
         const people = Math.max(1, households[i]) * PEOPLE_PER_HOUSEHOLD, t0 = depart[i], home = B[i].c;
         if (!starts[i].length) { groups.push({i, people, depart: t0, status: 'nopath', coords: [home], times: [t0]}); continue; }
         const tree = treeAt(t0);
-        const pick = starts[i].filter(([id]) => tree.d.has(id) && !tree.unsafe(id))
-          .map(([id, dm]) => [id, dm / speedMpm + tree.d.get(id)]).sort((a, b) => a[1] - b[1])[0];
+        // step out onto the nearest usable street or alley, then walk along it to one of its ends
+        let pick = null;
+        for (const st of starts[i]) {
+          if (tree.blocked.has(st.m.e)) continue;
+          const w = weightOf(st.m.from, st.m.to, st.m.e), frac = st.m.total ? st.at / st.m.total : 0;
+          for (const [end, part] of [[st.m.from, frac], [st.m.to, 1 - frac]]) {
+            if (!tree.d.has(end) || tree.unsafe(end)) continue;
+            const cost = st.d * ACCESS_SLOWDOWN / speedMpm + w * part + tree.d.get(end);
+            if (!pick || cost < pick.cost) pick = {cost, st, end, w: w * part};
+          }
+        }
         if (!pick) { groups.push({i, people, depart: t0, status: 'trapped', coords: [home], times: [t0]}); continue; }
-        // walk: home -> first junction -> ... -> safe place, with a time stamp on every point
-        let node = pick[0], t = t0 + dist(B[i].cm, nodeM.get(node)) / speedMpm;
-        const coords = [home, base.coords.get(node).lonlat], times = [t0, t];
+        // walk: home -> doorstep on the street -> end of that street -> ... -> safe place, with a time on every point
+        const {st, end} = pick, door = st.m.line[st.k].map((v, j) => v + (st.m.line[st.k + 1][j] - v) * st.t);
+        let t = t0 + st.d * ACCESS_SLOWDOWN / speedMpm;
+        const coords = [home, door], times = [t0, t];
+        const along = end === st.m.from ? st.m.line.slice(0, st.k + 1).reverse() : st.m.line.slice(st.k + 1);
+        let prev = door, acc = 0;
+        const partLen = end === st.m.from ? st.at : st.m.total - st.at;
+        for (const c of along) {
+          acc += dist(toM(prev), toM(c)); prev = c;
+          coords.push(c); times.push(t + (partLen ? pick.w * Math.min(1, acc / partLen) : pick.w));
+        }
+        t += pick.w;
+        let node = end;
         while (tree.next.has(node)) {
           const [u, e] = tree.next.get(node), w = weightOf(node, u, e), line = edgeLine(e, node);
           let total = 0;

@@ -197,6 +197,10 @@ const HELP = {
     what: 'Where the residents go. When the fire comes within 30 m of a building, or the building itself catches, its residents leave and walk to the nearest safe place: a safe area set by the class (Routes panel) or the main road, which the paper describes as cemented and passable. People per building = households (X6) × 5, the Baliwagan average (2026 census).',
     get: 'Watch the dots: white = walking, green = reached safety, red = cut off (every street out was blocked by fire when they set off), grey = no mapped road or alley near their home yet. Solid green = route along mapped roads and alleys; dotted = the walk from home to the nearest mapped one, where the real alley is not drawn yet. Draw the missing alleys (Draw path) to make routes realistic.',
     sim: 'Routes use the walking network (roads plus the alleys drawn from the GPS walks), with the same travel times as Routes, and avoid every street within 8 m of a building already burning when they leave. It does not change the fire. Times assume people leave at once and walk at 4.5 km/h; no crowding, so real evacuations are slower.'},
+  gpspaths: {title: 'Turn walks into escape paths',
+    what: 'GPS walks are only a record of where students walked; evacuation cannot use them directly because phone GPS wobbles 3–5 m and walks go back and forth. This button turns them into proper paths that evacuation does use.',
+    get: 'It keeps only the parts of the walks that are not already on a road or path (so the main road and alleys walked twice are not duplicated), smooths the wobble, and joins each end onto the road it meets. Each new path is a 1 m walking path marked “from GPS walk”: click it afterwards to enter the measured width, fix its position, or delete it.',
+    sim: 'Residents step out of their door onto the nearest road or path, so the alleys give people near them a real way out (and people whose alley is blocked by fire are counted as cut off). Walks imported later can be converted again: only new parts are added.'},
   safe: {title: 'Safe areas',
     what: 'Places where people should gather in a fire: open spaces away from buildings, such as a covered court, plaza or school ground.',
     get: 'Editors click “Add safe area”, then the map. Name each one (e.g. “Baliwagan Covered Court”). Ask the BFP or barangay which places are official.',
@@ -367,7 +371,7 @@ let guideHidden = (() => { try { return localStorage.getItem(GUIDE_KEY) === '1';
 function updateGuide() {
   if (!selected()) hideInfo();
   const busy = Boolean(selected()) || !fui.playback.hidden || Boolean(drawing) || (typeof pathDraft !== 'undefined' && pathDraft);
-  fui.guide.hidden = guideHidden || busy;
+  fui.guide.hidden = guideHidden || busy || !document.querySelector('#legend').hidden; // one card in that corner at a time
 }
 fui.guideHide.addEventListener('click', () => { guideHidden = true; try { localStorage.setItem(GUIDE_KEY, '1'); } catch { /* not remembered */ } updateGuide(); });
 fui.help.addEventListener('click', () => { guideHidden = false; try { localStorage.removeItem(GUIDE_KEY); } catch { /* ignore */ } select(null); updateGuide(); });
@@ -575,6 +579,7 @@ function showRun(id) {
   fui.metrics.innerHTML = outs.map((o, i) =>
     `<div class="metric" data-info="out-${i}" tabindex="0"><span>${o.sym} ${o.name}</span><strong>${o.text}</strong><small>${o.unit}</small></div>`).join('');
   evacShow(run);
+  legendForFire();
   setResults(false);
   updateWind();
   fui.playback.hidden = false;

@@ -133,7 +133,7 @@ function personImages() {
   return out;
 }
 // legend images in the playback bar
-for (const [el, pose, state] of [['moving', 'runA', 'moving'], ['arrived', 'stand', 'arrived'], ['trapped', 'help', 'trapped']]) {
+for (const [el, pose, state] of [['moving', 'runA', 'moving'], ['arrived', 'stand', 'arrived'], ['trapped', 'help', 'trapped'], ['nopath', 'stand', 'nopath']]) {
   const img = drawPerson(pose, FIGURE[state]), c = document.createElement('canvas');
   c.width = img.width; c.height = img.height; c.getContext('2d').putImageData(img, 0, 0);
   document.querySelectorAll(`.fig-${el}`).forEach(i => { i.src = c.toDataURL(); });
@@ -172,3 +172,16 @@ function evacTick(minute) {
 }
 function evacClear() { evacShown = null; evacTick(0); eui.summary.hidden = true; }
 eui.toggle.addEventListener('change', () => { evacLastRoutes = -1; evacTick(typeof displayMinute === 'number' ? displayMinute : 0); });
+
+// ---------- legend ----------
+const LEGEND_KEY = 'ignisshield-map3d.legend-closed';
+const legend = $('#legend'), legendBtn = $('#legend-btn');
+function setLegend(open) { legend.hidden = !open; document.body.classList.toggle('legend-open', open); legendBtn.setAttribute('aria-pressed', String(open)); updateGuide(); }
+legendBtn.addEventListener('click', () => { setLegend(legend.hidden); try { localStorage.setItem(LEGEND_KEY, legend.hidden ? '1' : '0'); } catch { /* not remembered */ } });
+$('#legend-close').addEventListener('click', () => { setLegend(false); try { localStorage.setItem(LEGEND_KEY, '1'); } catch { /* not remembered */ } });
+/** Open the legend when a fire starts, unless the user closed it before or the screen is small. */
+function legendForFire() {
+  let closed = false;
+  try { closed = localStorage.getItem(LEGEND_KEY) === '1'; } catch { /* default open */ }
+  if (!closed && window.innerWidth > 1024) setLegend(true);
+}

@@ -58,7 +58,72 @@
     };
   }
 
-  const api = {parsePoints, cleanWalk};
+  // ---------- GPS walks -> escape paths ----------
+  const toM = ([x, y]) => [x * K[0], y * K[1]];
+  const toLL = ([x, y]) => [+(x / K[0]).toFixed(7), +(y / K[1]).toFixed(7)];
+  function closest(p, segs) { // nearest point on any segment [[a, b], ...] (metres)
+    let best = null;
+    for (const [a, b] of segs) {
+      if (Math.min(a[0], b[0]) - p[0] > 40 || p[0] - Math.max(a[0], b[0]) > 40 || Math.min(a[1], b[1]) - p[1] > 40 || p[1] - Math.max(a[1], b[1]) > 40) continue;
+      const vx = b[0] - a[0], vy = b[1] - a[1], L = vx * vx + vy * vy;
+      const t = L ? Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / L)) : 0;
+      const q = [a[0] + t * vx, a[1] + t * vy], d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (!best || d < best.d) best = {d, q};
+    }
+    return best ?? {d: Infinity};
+  }
+  function simplify(pts, tol) { // Douglas–Peucker
+    if (pts.length < 3) return pts;
+    const [a, b] = [pts[0], pts[pts.length - 1]];
+    let far = 0, at = 0;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const d = closest(pts[i], [[a, b]]).d;
+      if (d > far) { far = d; at = i; }
+    }
+    return far <= tol ? [a, b] : [...simplify(pts.slice(0, at + 1), tol).slice(0, -1), ...simplify(pts.slice(at), tol)];
+  }
+  /**
+   * Turn walked GPS lines into paths for the network. Keeps only the parts more than `onM` metres from any road or
+   * earlier path (so roads and alleys walked twice are not duplicated), smooths GPS wobble, and joins each end onto
+   * the road or path it meets so routing can use it.
+   * @param tracks  array of MultiLineString coordinates (lon/lat)
+   * @param network array of existing lines (lon/lat coordinate arrays): roads and drawn paths
+   * @returns array of LineString coordinate arrays (lon/lat)
+   */
+  function tracksToPaths(tracks, network, {onM = 6, joinM = 12, tol = 2.5, minLen = 12} = {}) {
+    const segs = [];
+    const addLine = line => { for (let i = 0; i < line.length - 1; i++) segs.push([line[i], line[i + 1]]); };
+    for (const l of network) addLine(l.map(toM));
+    const out = [];
+    const finish = run => {
+      if (run.length < 2) return;
+      const s = simplify(run, tol);
+      let len = 0;
+      for (let i = 1; i < s.length; i++) len += Math.hypot(s[i][0] - s[i - 1][0], s[i][1] - s[i - 1][1]);
+      if (len < minLen) return;
+      out.push(s.map(toLL));
+      addLine(s); // later walks along the same alley are treated as already mapped
+    };
+    for (const multi of tracks) for (const line of multi) {
+      const pts = line.map(toM);
+      let run = [];
+      for (let i = 0; i < pts.length; i++) {
+        const c = closest(pts[i], segs);
+        if (c.d > onM) {
+          if (!run.length && i > 0) { const s = closest(pts[i - 1], segs); if (s.d <= joinM) run.push(s.q); } // start on the road it left
+          run.push(pts[i]);
+        } else if (run.length) {
+          if (c.d <= joinM) run.push(c.q); // end on the road it joins
+          finish(run);
+          run = [];
+        }
+      }
+      finish(run);
+    }
+    return out;
+  }
+
+  const api = {parsePoints, cleanWalk, tracksToPaths};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.IgnisField = api;
 })(globalThis);

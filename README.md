@@ -134,11 +134,12 @@ Public maps miss most of Polo's interior alleys, so students walk them with Stra
    - **removes all timestamps and names**, keeping only the walk date.
 
    Tracks show in pink, and the **GPS tracks** checkbox toggles them.
-3. **Draw paths.** Editors use **Draw path** (2D, satellite):
+3. **Turn walks into escape paths** (Routes panel). Converts the parts of the walks not already on a road or path into 1 m walking paths (GPS wobble smoothed, alleys walked twice kept once, ends joined onto the roads they meet), marked “from GPS walk” for checking. GPS tracks themselves are a record only; evacuation and routing use paths.
+4. **Draw or fix paths.** Editors use **Draw path** (2D, satellite):
    - Click along the middle of each alley. Ends snap to roads and other paths (green dot).
    - Set the measured **width** and **who can pass**: on foot, motorcycles too, or cars and fire trucks.
    - Phone GPS is only accurate to about 3–5 m, so use the tracks to see which gap between houses the alley follows, and the photo to place the line.
-4. **Routing uses the paths.** `prepareNetwork` in `public/routing.js` joins each path to the network:
+5. **Routing and evacuation use the paths.** `prepareNetwork` in `public/routing.js` joins each path to the network:
    - an end within 2.5 m of a junction joins it;
    - an end on a road or path within 3 m splits that line into a T-junction.
 
@@ -153,7 +154,7 @@ Every fire run also shows the residents walking to safety (`public/evac.js`, dis
 
 - **Who leaves:** residents of every building the fire comes within 30 m of leave at that minute, or when their own building catches. People per building = households (X6) × 5, the Baliwagan average (2026 census: 6,141 people in 1,209 households).
 - **Where to:** the quickest reachable safe place. That is either the **main road** (every junction on a trunk, primary, secondary or tertiary road; the paper describes it as cemented and passable) or a **safe area** that editors add in **Routes → Safe areas** (e.g. a covered court). Safe areas are shared by the class.
-- **Route:** the walking network, meaning inventory roads plus the alleys drawn from the GPS walks, with the same travel times as Routes (4.5 km/h, slowed by narrow and crowded streets). Routes avoid every street within 8 m of a building that was already burning when people set off. A safe place stops counting once fire is within 16 m of it.
+- **Route:** each household steps out onto the nearest point on any road or path within 80 m (the walk there is counted at half speed: squeezing between houses), then follows the walking network, meaning inventory roads plus the alleys drawn from the GPS walks, with the same travel times as Routes (4.5 km/h, slowed by narrow and crowded streets). Routes avoid every street within 8 m of a building that was already burning when people set off. A safe place stops counting once fire is within 16 m of it.
 - **On the map:** human figures (families walk in single file, up to 5 figures). Playback is a time-lapse: the speed menu goes from real time (true walking pace) to 240× faster, default 30×.
 - **Figures:**
   - **white dots** are walking;

@@ -243,3 +243,23 @@ button.fire.big { padding: 10px; font-size: 15px; }
 #safe-list input { font: inherit; padding: 3px 5px; flex: 1; min-width: 0; }
 .fig { width: 11px; height: 16px; vertical-align: -3px; margin-left: 6px; }
 .speed-wrap select { font: inherit; }
+/* legend */
+#legend { position: absolute; left: 12px; bottom: 36px; width: 330px; max-height: calc(100% - var(--toolbar-bottom, 52px) - 60px); overflow-y: auto; z-index: 2;
+  padding: 10px 12px; background: rgba(255,255,255,.97); border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.25); font-size: 12.5px; }
+#legend h5 { margin: 8px 0 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #546e7a; }
+#legend ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+#legend li { display: grid; grid-template-columns: 26px 1fr; gap: 6px; align-items: center; }
+#legend .fig { width: 14px; height: 20px; margin: 0 auto; }
+.ln { display: block; width: 24px; height: 0; border-top: 3px solid; }
+.ln-route { border-color: #00e676; } .ln-access { border-top: 2px dotted #00c853; }
+.ln-gps { border-color: #ff3df2; } .ln-path { border-top: 3px dashed #e53935; }
+.ln-road { border-color: #fdd835; } .ln-boundary { border-top: 2px dashed #c0392b; }
+.sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; }
+#legend li > .sw:first-child { margin: 0 auto; }
+.sw-safe { background: #00c853; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #00c853; }
+.sw-ai { background: #35c6d6; } .sw-user { background: #2d7ff9; } .sw-sel { background: #ffd33d; }
+.sw-burn { background: #ff5a1f; } .sw-burned { background: #2a2522; }
+@media (max-width: 700px) { #legend { left: 0; right: 0; bottom: 0; width: auto; border-radius: 14px 14px 0 0; max-height: 60vh; z-index: 7; } }
+@media (min-width: 1025px) {
+  body.legend-open #playback { left: calc(354px + (100% - 354px) / 2); width: min(760px, calc(100% - 378px)); }
+}

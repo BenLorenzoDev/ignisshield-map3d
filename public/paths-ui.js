@@ -6,7 +6,7 @@ const ACCESS = {walk: 'People on foot only', motorcycle: 'Motorcycles too', vehi
 
 const pui = {
   draw: $('#draw-path'), showTracks: $('#show-tracks'), gpx: $('#gpx-input'), tracksList: $('#tracks-list'),
-  panel: $('#path-panel'), meta: $('#path-meta'), width: $('#path-width'), access: $('#path-access'), note: $('#path-note'), del: $('#path-delete')
+  toPaths: $('#tracks-to-paths'), panel: $('#path-panel'), meta: $('#path-meta'), width: $('#path-width'), access: $('#path-access'), note: $('#path-note'), del: $('#path-delete')
 };
 
 const loadLocal = key => { try { return JSON.parse(localStorage.getItem(key)) || empty(); } catch { return empty(); } };
@@ -67,6 +67,7 @@ function renderTracks() {
     ? tracks.features.map(t => `<div class="track-row"><span>${esc(t.properties.name)} · ${esc(t.properties.walked_on ?? '')} · ${km(t)} km</span>${canEdit() ? `<button data-track="${esc(t.properties.id)}">Delete</button>` : ''}</div>`).join('')
     : '<span class="muted">No GPS tracks yet.</span>';
   pui.gpx.closest('label').hidden = !canEdit();
+  pui.toPaths.hidden = !canEdit() || !tracks.features.length;
 }
 pui.tracksList.addEventListener('click', async e => {
   const id = e.target.dataset.track;
@@ -100,6 +101,25 @@ pui.gpx.addEventListener('change', async () => {
   map.setLayoutProperty('tracks', 'visibility', 'visible');
   refreshField();
   if (done.length) showHint(`Imported ${done.join('; ')}. Times and names were not kept.`, 10000);
+});
+// GPS walks -> escape paths: the parts of the walks that are not on a road yet become 1 m walking paths
+pui.toPaths.addEventListener('click', async () => {
+  if (!requireEdit()) return;
+  const lineOf = g => (g.type === 'MultiLineString' ? g.coordinates[0] : g.coordinates);
+  const roadsNow = studyData.features.filter(f => f.properties.kind === 'road').map(f => lineOf(f.geometry));
+  const made = IgnisField.tracksToPaths(tracks.features.map(t => t.geometry.coordinates), [...roadsNow, ...paths.features.map(f => f.geometry.coordinates)]);
+  if (!made.length) { showHint('Every part of the GPS walks is already on a road or path: nothing new to add.', 7000); return; }
+  if (!window.confirm(`Create ${made.length} escape paths from the GPS walks? They are saved as 1 m walking paths marked “from GPS walk”, so check their width and position afterwards.`)) return;
+  pui.toPaths.disabled = true;
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    for (const [k, coords] of made.entries()) {
+      await savePath({type: 'Feature', geometry: {type: 'LineString', coordinates: coords},
+        properties: {id: `path-gps-${Date.now()}-${k}`, width_m: 1, access: 'walk', note: 'From GPS walk: check the width and position', drawn_at: today, source: 'gps'}}, true);
+    }
+    showHint(`Created ${made.length} escape paths from the GPS walks. Evacuation uses them from the next fire. Click any path to set its measured width.`, 9000);
+  } catch (err) { showHint(`Could not save the paths: ${err.message}`, 9000); }
+  pui.toPaths.disabled = false;
 });
 pui.showTracks.addEventListener('change', () => map.setLayoutProperty('tracks', 'visibility', pui.showTracks.checked ? 'visible' : 'none'));
 

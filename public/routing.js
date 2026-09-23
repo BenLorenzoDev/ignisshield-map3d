@@ -303,6 +303,19 @@
     const lines = roads.map(f => ({f, coords: lineOf(f.geometry).map(c => c.slice()), from: String(f.properties.from_node), to: String(f.properties.to_node), splits: []}));
     const nodes = new Map(), roadNodes = new Set();
     for (const l of lines) { nodes.set(l.from, l.coords[0]); nodes.set(l.to, l.coords[l.coords.length - 1]); roadNodes.add(l.from); roadNodes.add(l.to); }
+    // A path that ends where it starts (a loop around a block) is split in the middle, so each half joins two junctions
+    const loops = [];
+    for (const p of paths) {
+      const c = p.geometry?.coordinates;
+      if (!c || c.length < 2) continue;
+      if (dist(c[0], c[c.length - 1]) > 2 * nodeM) { loops.push(p); continue; }
+      if (c.length < 3) continue; // a few metres long: nothing to route
+      const mid = Math.floor(c.length / 2);
+      for (const [k, part] of [[1, c.slice(0, mid + 1)], [2, c.slice(mid)]]) {
+        loops.push({...p, geometry: {type: 'LineString', coordinates: part}, properties: {...p.properties, id: `${p.properties.id}#${k}`}});
+      }
+    }
+    paths = loops;
     const pathLines = paths.filter(p => p.geometry?.coordinates?.length >= 2).map(p => ({
       coords: p.geometry.coordinates.map(c => c.slice()), splits: [],
       f: {type: 'Feature', geometry: p.geometry, properties: {id: String(p.properties.id), kind: 'road', source: 'field survey',

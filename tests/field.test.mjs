@@ -40,4 +40,16 @@ test('standing still is thinned to a few points', () => {
 test('a Strava route file (no times) is refused with advice', () => {
   assert.throws(() => F.cleanWalk('<gpx><trkpt lat="1" lon="2"></trkpt><trkpt lat="1.1" lon="2"></trkpt></gpx>'), /Strava route/);
 });
+const at = (e, nn) => [123.712 + e * mE, 10.508 + nn / 110540];
+test('walks along a road add nothing; a walk into an alley becomes one path joined to the road', () => {
+  const road = [at(0, 0), at(200, 0)];
+  const along = [[at(10, 1), at(60, -1), at(120, 1)]];
+  assert.equal(F.tracksToPaths([along], [road]).length, 0);
+  // leave the road at x = 50, walk 40 m north (with GPS wobble), come back down the same alley, rejoin the road
+  const out = [at(50, 1), at(51, 10), at(49, 20), at(51, 30), at(50, 40), at(49, 30), at(51, 20), at(50, 10), at(50, 1)];
+  const made = F.tracksToPaths([[out]], [road]);
+  assert.equal(made.length, 1, 'the way back is not a second path');
+  const first = made[0][0];
+  assert.ok(Math.abs(first[1] - 10.508) < 1e-7, 'starts exactly on the road');
+});
 console.log(`All ${n} field tests passed.`);

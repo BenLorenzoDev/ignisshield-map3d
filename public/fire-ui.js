@@ -271,7 +271,8 @@ fui.logCsv.addEventListener('click', () => {
 // ---------- running ----------
 let run = null;   // run being shown: {id, result, features, ids}
 let shown = null; // fire state currently drawn for each building
-let frameIndex = 0, playTimer = null, flickerTimer = null, flickerOn = false;
+let frameIndex = 0;
+let playTimer = null; // truthy while playing (route-ui checks it)
 const STATE_NAMES = ['safe', 'burning', 'burned'];
 
 async function startFire() {
@@ -290,13 +291,14 @@ async function startFire() {
     const trial = P.TRIALS[scenario.source];
     const x = buildingPaperValues(origin), local = measuredDensity().get(origin.properties.id);
     const ids = features.map(f => f.properties.id);
+    const w = trial ? scenario.trials[scenario.source] : scenario.custom, wind = {Tw: w.Tw, Uw: w.Uw}; // smoke drifts downwind
     let first = null;
     const records = [];
     for (let k = 0; k < scenario.repeats; k++) {
       const seed = scenario.seed + k;
       const result = IgnisFire.simulate(features, f => byFeature.get(f), index, seed, scenario.minutes);
       const id = `${batch}-${k}`;
-      sessionRuns.set(id, {id, result, features, ids, seed});
+      sessionRuns.set(id, {id, result, features, ids, seed, wind});
       const out = P.outputs(result.metrics);
       records.push({
         id, batch, utc, run_in_batch: k + 1, scenario: trial ? `Trial ${scenario.source} (${trial.level})` : 'Custom',
@@ -334,6 +336,7 @@ async function startFire() {
 function showRun(id) {
   clearFire();
   run = sessionRuns.get(id);
+  prepareEffects(run);
   if (![...fui.batchRun.options].some(o => o.value === id)) {
     fui.batchRun.innerHTML = `<option value="${id}">Logged run · seed ${run.seed}</option>`;
   }
@@ -343,63 +346,168 @@ function showRun(id) {
   fui.metrics.innerHTML = P.outputs(run.result.metrics).map(o =>
     `<div class="metric"><span>${o.sym} ${o.name}</span><strong>${o.text}</strong><small>${o.unit}</small></div>`).join('');
   fui.playback.hidden = false;
-  flickerTimer = setInterval(flicker, 200);
+  displayMinute = 0;
   showFrame(0);
   play();
+  lastTs = 0;
+  rafId = requestAnimationFrame(loop);
 }
 fui.batchRun.addEventListener('change', () => showRun(fui.batchRun.value));
 
+// ---------- fire effects ----------
+// Each burning building grows from small flames to a full blaze and dies down to embers over the burn time the
+// model gives it (ignition minute to burned-out minute). Paint expressions read the playback clock, so flames
+// grow smoothly between model minutes and every building flickers with its own phase.
+let displayMinute = 0, clock = 0, lastTs = 0, lastPaint = 0, rafId = null;
+const TIER = {
+  outer: {scale: 1, height: 3.5, speed: 6, amp: 0.15},
+  mid: {scale: 0.68, height: 5.5, speed: 8.5, amp: 0.22},
+  core: {scale: 0.38, height: 7.5, speed: 11, amp: 0.3}
+};
+const SMOKE_MAX = 220; // buildings with smoke at once, to keep the map fast
+
+function prepareEffects(r) {
+  const frames = r.result.frames, n = r.features.length;
+  const ig = new Float32Array(n).fill(NaN), out = new Float32Array(n).fill(NaN);
+  for (const f of frames) {
+    for (let i = 0; i < n; i++) {
+      const s = f.states[i];
+      if (s > 0 && Number.isNaN(ig[i])) ig[i] = f.minute;
+      if (s === 2 && Number.isNaN(out[i])) out[i] = f.minute;
+    }
+  }
+  const finished = [];
+  for (let i = 0; i < n; i++) if (!Number.isNaN(out[i])) finished.push(out[i] - ig[i]);
+  finished.sort((a, b) => a - b);
+  const typical = finished.length ? finished[finished.length >> 1] : 12; // for buildings still burning at the end
+  const dur = new Float32Array(n);
+  for (let i = 0; i < n; i++) dur[i] = Math.max(1, Number.isNaN(out[i]) ? typical : out[i] - ig[i]);
+  r.fx = {ig, out, dur, rings: new Map()};
+}
+const phase = i => (i * 2.39996) % (2 * Math.PI); // golden-angle spread: neighbours flicker out of step
+function ringsFor(i) { // centroid and shrunken footprints of building i, cached per run
+  let c = run.fx.rings.get(i);
+  if (!c) {
+    const ring = run.features[i].geometry.coordinates[0];
+    const n = ring.length - 1;
+    let x = 0, y = 0;
+    for (let k = 0; k < n; k++) { x += ring[k][0]; y += ring[k][1]; }
+    x /= n; y /= n;
+    const scaled = s => [ring.map(([px, py]) => [x + (px - x) * s, y + (py - y) * s])];
+    c = {centre: [x, y], outer: [ring], mid: scaled(TIER.mid.scale), core: scaled(TIER.core.scale)};
+    run.fx.rings.set(i, c);
+  }
+  return c;
+}
+function puff([x, y], r) { // 10-sided circle, radius r metres
+  const dx = r / (111320 * Math.cos(y * Math.PI / 180)), dy = r / 110540, ring = [];
+  for (let k = 0; k <= 10; k++) { const a = k / 10 * 2 * Math.PI; ring.push([x + dx * Math.cos(a), y + dy * Math.sin(a)]); }
+  return [ring];
+}
+
 function showFrame(k) {
   frameIndex = k;
-  const frames = run.result.frames, states = frames[k].states, burning = [];
+  const frames = run.result.frames, states = frames[k].states, minute = frames[k].minute, {ig, out, dur} = run.fx;
+  const flames = [], points = [], smoky = [];
   states.forEach((s, i) => {
-    if (shown[i] !== s) { map.setFeatureState({source: 'buildings', id: run.ids[i]}, {fire: STATE_NAMES[s]}); shown[i] = s; }
-    if (s === 1) burning.push(run.features[i]);
+    if (shown[i] !== s) { map.setFeatureState({source: 'buildings', id: run.ids[i]}, {fire: STATE_NAMES[s], ph: phase(i)}); shown[i] = s; }
+    if (s === 1) {
+      const h = (run.features[i].properties.storeys ?? 1) * STOREY_M, c = ringsFor(i), props = {h, ig: ig[i], dur: dur[i], ph: phase(i)};
+      for (const tier of ['outer', 'mid', 'core']) flames.push({type: 'Feature', geometry: {type: 'Polygon', coordinates: c[tier]}, properties: {...props, tier}});
+      points.push({type: 'Feature', geometry: {type: 'Point', coordinates: c.centre}, properties: props});
+    }
+    if (s === 1 || (s === 2 && minute - out[i] < 8)) smoky.push(i);
   });
-  map.getSource('flames').setData({type: 'FeatureCollection', features: burning.map(f => ({
-    type: 'Feature', geometry: f.geometry, properties: {h: (f.properties.storeys ?? 1) * STOREY_M}
-  }))});
+  // Smoke: three puffs per building, further downwind and wider as they rise
+  smoky.sort((a, b) => ig[b] - ig[a]);
+  const toward = ((run.wind.Tw + 180) % 360) * Math.PI / 180, spread = 0.6 + run.wind.Uw / 5;
+  const smoke = [];
+  for (const i of smoky.slice(0, SMOKE_MAX)) {
+    const h = (run.features[i].properties.storeys ?? 1) * STOREY_M, [x, y] = ringsFor(i).centre;
+    for (let l = 0; l < 3; l++) {
+      const d = (3 + 7 * l) * spread;
+      const c = [x + d * Math.sin(toward) / (111320 * Math.cos(y * Math.PI / 180)), y + d * Math.cos(toward) / 110540];
+      smoke.push({type: 'Feature', geometry: {type: 'Polygon', coordinates: puff(c, 2.5 + 2.2 * l)},
+        properties: {h, l, ph: phase(i), out: Number.isNaN(out[i]) ? 1e9 : out[i]}});
+    }
+  }
+  map.getSource('flames').setData({type: 'FeatureCollection', features: flames});
+  map.getSource('fire-points').setData({type: 'FeatureCollection', features: points});
+  map.getSource('smoke').setData({type: 'FeatureCollection', features: smoke});
   const row = run.result.timeline[k];
   fui.frame.value = k;
-  fui.minute.textContent = `Minute ${frames[k].minute} of ${frames.at(-1).minute}`;
+  fui.minute.textContent = `Minute ${minute} of ${frames.at(-1).minute}`;
   fui.status.textContent = `${row.Burning} burning · ${row.Burned} burned${k === frames.length - 1 ? ` · ${run.result.status}` : ''}`;
+  paintFire();
   if (typeof onFireFrame === 'function') onFireFrame();
 }
+
+/** Re-evaluate the animated paint: fire life cycle at the current (fractional) minute plus per-building flicker. */
+let paintCount = 0;
+function paintFire() {
+  const m = displayMinute, t = clock, is3d = view === "3d";
+  paintCount++;
+  // 0.35 -> 1 while catching (first quarter of the burn), full blaze, then dying down to embers (0.2)
+  const intensity = ['let', 'p', ['/', ['-', m, ['get', 'ig']], ['get', 'dur']],
+    ['case', ['<', ['var', 'p'], 0.25], ['+', 0.35, ['*', 2.6, ['var', 'p']]], ['<', ['var', 'p'], 0.7], 1,
+      ['max', 0.2, ['-', 1, ['*', 2.5, ['-', ['var', 'p'], 0.7]]]]]];
+  const flicker = (speed, amp, k) => ['+', 1 - amp, ['*', amp, ['sin', ['+', t * speed, ['*', ['get', 'ph'], k]]]]];
+  if (is3d) for (const [tier, v] of Object.entries(TIER)) {
+    map.setPaintProperty(`flames-${tier}`, 'fill-extrusion-height',
+      ['+', ['get', 'h'], ['*', intensity, v.height, flicker(v.speed, v.amp, 1 + v.scale)]]);
+  }
+  map.setPaintProperty('fire-glow', 'heatmap-weight', ['*', intensity, flicker(5, 0.2, 1)]);
+  // Smoke rises in a loop and shrinks away in the minutes after a building has burned out
+  const rise = ['%', ['+', t * 0.18, ['*', ['get', 'ph'], 0.3], ['*', ['get', 'l'], 0.33]], 1];
+  const base = ['+', ['get', 'h'], 3, ['*', ['get', 'l'], 4], ['*', rise, 8]];
+  const fade = ['max', 0, ['min', 1, ['-', 1, ['/', ['-', m, ['get', 'out']], 8]]]];
+  if (is3d) map.setPaintProperty('smoke-3d', 'fill-extrusion-base', base);
+  if (is3d) map.setPaintProperty('smoke-3d', 'fill-extrusion-height', ['+', base, ['*', ['+', 2.5, ['*', ['get', 'l'], 1.5]], fade]]);
+  // Burning buildings pulse between deep red and orange, each with its own phase. Recolouring every building is the
+  // expensive part, so it runs on every third update (about 5 times a second).
+  if (paintCount % 3) return;
+  const burn = ['interpolate', ['linear'], ['sin', ['+', t * 6, ['coalesce', ['feature-state', 'ph'], 0]]], -1, '#b3230a', 1, '#ff7000'];
+  map.setPaintProperty(is3d ? 'buildings-3d' : 'buildings-2d', is3d ? 'fill-extrusion-color' : 'fill-color', buildingColor(burn));
+}
+
+function loop(ts) {
+  rafId = requestAnimationFrame(loop);
+  const dt = lastTs ? Math.min(0.25, (ts - lastTs) / 1000) : 0; // cap: a stalled tab does not jump ahead
+  lastTs = ts;
+  clock += dt;
+  if (playTimer) {
+    const end = run.result.frames.length - 1;
+    displayMinute = Math.min(end, displayMinute + dt * Number(fui.speed.value));
+    const k = Math.floor(displayMinute);
+    if (k !== frameIndex) showFrame(k);
+    if (displayMinute >= end) pause();
+  }
+  if (ts - lastPaint > 70) { lastPaint = ts; paintFire(); } // ~14 updates a second: smooth, and keeps the map fast
+}
+
 /** Buildings burning or burned at the minute on screen (for routing around the fire). */
 function fireAffectedNow() {
   if (!run) return [];
   return run.features.filter((f, i) => run.result.frames[frameIndex].states[i] > 0);
 }
 
-function flicker() {
-  flickerOn = !flickerOn;
-  const burn = flickerOn ? FIRE.burnB : FIRE.burnA;
-  map.setPaintProperty('buildings-3d', 'fill-extrusion-color', buildingColor(burn));
-  map.setPaintProperty('buildings-2d', 'fill-color', buildingColor(burn));
-  map.setPaintProperty('flames-3d', 'fill-extrusion-height', ['+', ['get', 'h'], flickerOn ? 4.5 : 2.5]);
-  map.setPaintProperty('flames-2d', 'line-width', flickerOn ? 6 : 3);
-}
 function play() {
-  pause();
-  if (frameIndex >= run.result.frames.length - 1) showFrame(0);
+  if (frameIndex >= run.result.frames.length - 1) { displayMinute = 0; showFrame(0); }
+  playTimer = true;
   fui.play.textContent = 'Pause';
-  playTimer = setInterval(() => {
-    if (frameIndex >= run.result.frames.length - 1) pause();
-    else showFrame(frameIndex + 1);
-  }, 1000 / Number(fui.speed.value));
 }
 function pause() {
-  clearInterval(playTimer);
   playTimer = null;
   fui.play.textContent = 'Play';
 }
 function clearFire() {
   pause();
-  clearInterval(flickerTimer);
+  cancelAnimationFrame(rafId);
+  rafId = null;
   run = null;
   if (!map.getSource('flames')) return;
   map.removeFeatureState({source: 'buildings'});
-  map.getSource('flames').setData(empty());
+  for (const src of ['flames', 'fire-points', 'smoke']) map.getSource(src).setData(empty());
   map.setPaintProperty('buildings-3d', 'fill-extrusion-color', buildingColor(FIRE.burnA));
   map.setPaintProperty('buildings-2d', 'fill-color', buildingColor(FIRE.burnA));
   fui.playback.hidden = true;
@@ -408,9 +516,8 @@ function clearFire() {
 
 fui.ignite.addEventListener('click', startFire);
 fui.play.addEventListener('click', () => (playTimer ? pause() : play()));
-fui.restart.addEventListener('click', () => { showFrame(0); play(); });
-fui.frame.addEventListener('input', () => { pause(); showFrame(Number(fui.frame.value)); });
-fui.speed.addEventListener('change', () => { if (playTimer) play(); });
+fui.restart.addEventListener('click', () => { displayMinute = 0; showFrame(0); play(); });
+fui.frame.addEventListener('input', () => { pause(); displayMinute = Number(fui.frame.value); showFrame(displayMinute); });
 fui.clearFire.addEventListener('click', clearFire);
 
 // ---------- live weather (Open-Meteo: free, no key, CC BY 4.0) ----------

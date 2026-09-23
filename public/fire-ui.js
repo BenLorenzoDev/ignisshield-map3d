@@ -356,15 +356,10 @@ fui.batchRun.addEventListener('change', () => showRun(fui.batchRun.value));
 
 // ---------- fire effects ----------
 // Each burning building grows from small flames to a full blaze and dies down to embers over the burn time the
-// model gives it (ignition minute to burned-out minute). Paint expressions read the playback clock, so flames
-// grow smoothly between model minutes and every building flickers with its own phase.
+// model gives it (ignition minute to burned-out minute). Flames and smoke are GPU sprites (fire-gl.js); the ground
+// glow and the red/orange pulse of burning buildings are map layers.
 let displayMinute = 0, clock = 0, lastTs = 0, lastPaint = 0, rafId = null;
-const TIER = {
-  outer: {scale: 1, height: 3.5, speed: 6, amp: 0.15},
-  mid: {scale: 0.68, height: 5.5, speed: 8.5, amp: 0.22},
-  core: {scale: 0.38, height: 7.5, speed: 11, amp: 0.3}
-};
-const SMOKE_MAX = 220; // buildings with smoke at once, to keep the map fast
+const SMOKE_MAX = 260; // buildings with smoke at once, to keep the map fast
 
 function prepareEffects(r) {
   const frames = r.result.frames, n = r.features.length;
@@ -382,27 +377,32 @@ function prepareEffects(r) {
   const typical = finished.length ? finished[finished.length >> 1] : 12; // for buildings still burning at the end
   const dur = new Float32Array(n);
   for (let i = 0; i < n; i++) dur[i] = Math.max(1, Number.isNaN(out[i]) ? typical : out[i] - ig[i]);
-  r.fx = {ig, out, dur, rings: new Map()};
+  r.fx = {ig, out, dur, shapes: new Map()};
 }
 const phase = i => (i * 2.39996) % (2 * Math.PI); // golden-angle spread: neighbours flicker out of step
-function ringsFor(i) { // centroid and shrunken footprints of building i, cached per run
-  let c = run.fx.rings.get(i);
-  if (!c) {
-    const ring = run.features[i].geometry.coordinates[0];
-    const n = ring.length - 1;
-    let x = 0, y = 0;
-    for (let k = 0; k < n; k++) { x += ring[k][0]; y += ring[k][1]; }
-    x /= n; y /= n;
-    const scaled = s => [ring.map(([px, py]) => [x + (px - x) * s, y + (py - y) * s])];
-    c = {centre: [x, y], outer: [ring], mid: scaled(TIER.mid.scale), core: scaled(TIER.core.scale)};
-    run.fx.rings.set(i, c);
-  }
+const seedOf = (i, k) => ((i * 0.618034 + k * 0.414214) % 1);
+
+/** Centre, ground elevation and flame positions of building i (cached per run). Big roofs get several flames. */
+function shapeOf(i) {
+  let c = run.fx.shapes.get(i);
+  if (c && c.alt !== null) return c;
+  const f = run.features[i], ring = f.geometry.coordinates[0], n = ring.length - 1;
+  let x = 0, y = 0;
+  for (let k = 0; k < n; k++) { x += ring[k][0]; y += ring[k][1]; }
+  x /= n; y /= n;
+  const kx = 111320 * Math.cos(y * Math.PI / 180), ky = 110540;
+  let a2 = 0;
+  for (let k = 0; k < n; k++) a2 += (ring[k][0] - x) * kx * (ring[k + 1][1] - y) * ky - (ring[k + 1][0] - x) * kx * (ring[k][1] - y) * ky;
+  const area = Math.abs(a2) / 2;
+  const count = Math.max(1, Math.min(5, Math.round(area / 45)));
+  const spots = count === 1 ? [[x, y]] : Array.from({length: count}, (_, k) => {
+    const v = ring[Math.floor(k * n / count)];
+    return [x + (v[0] - x) * 0.55, y + (v[1] - y) * 0.55];
+  });
+  const ground = map.queryTerrainElevation([x, y]); // null until the terrain tile has loaded
+  c = {centre: [x, y], spots, size: Math.sqrt(area / count), alt: ground, h: (f.properties.storeys ?? 1) * STOREY_M};
+  run.fx.shapes.set(i, c);
   return c;
-}
-function puff([x, y], r) { // 10-sided circle, radius r metres
-  const dx = r / (111320 * Math.cos(y * Math.PI / 180)), dy = r / 110540, ring = [];
-  for (let k = 0; k <= 10; k++) { const a = k / 10 * 2 * Math.PI; ring.push([x + dx * Math.cos(a), y + dy * Math.sin(a)]); }
-  return [ring];
 }
 
 function showFrame(k) {
@@ -412,28 +412,26 @@ function showFrame(k) {
   states.forEach((s, i) => {
     if (shown[i] !== s) { map.setFeatureState({source: 'buildings', id: run.ids[i]}, {fire: STATE_NAMES[s], ph: phase(i)}); shown[i] = s; }
     if (s === 1) {
-      const h = (run.features[i].properties.storeys ?? 1) * STOREY_M, c = ringsFor(i), props = {h, ig: ig[i], dur: dur[i], ph: phase(i)};
-      for (const tier of ['outer', 'mid', 'core']) flames.push({type: 'Feature', geometry: {type: 'Polygon', coordinates: c[tier]}, properties: {...props, tier}});
-      points.push({type: 'Feature', geometry: {type: 'Point', coordinates: c.centre}, properties: props});
+      const c = shapeOf(i), alt = (c.alt ?? 0) + c.h;
+      c.spots.forEach((lngLat, j) => flames.push({lngLat, alt, height: 5 + c.size * 1.1, halfWidth: Math.max(2, c.size * 0.6),
+        seed: seedOf(i, j), ig: ig[i], dur: dur[i]}));
+      points.push({type: 'Feature', geometry: {type: 'Point', coordinates: c.centre}, properties: {ig: ig[i], dur: dur[i], ph: phase(i)}});
     }
     if (s === 1 || (s === 2 && minute - out[i] < 8)) smoky.push(i);
   });
-  // Smoke: three puffs per building, further downwind and wider as they rise
+  // Smoke: two puffs per building, drifting downwind as they rise
   smoky.sort((a, b) => ig[b] - ig[a]);
-  const toward = ((run.wind.Tw + 180) % 360) * Math.PI / 180, spread = 0.6 + run.wind.Uw / 5;
-  const smoke = [];
+  const toward = ((run.wind.Tw + 180) % 360) * Math.PI / 180, drift = 10 + 6 * run.wind.Uw;
+  const puffs = [];
   for (const i of smoky.slice(0, SMOKE_MAX)) {
-    const h = (run.features[i].properties.storeys ?? 1) * STOREY_M, [x, y] = ringsFor(i).centre;
-    for (let l = 0; l < 3; l++) {
-      const d = (3 + 7 * l) * spread;
-      const c = [x + d * Math.sin(toward) / (111320 * Math.cos(y * Math.PI / 180)), y + d * Math.cos(toward) / 110540];
-      smoke.push({type: 'Feature', geometry: {type: 'Polygon', coordinates: puff(c, 2.5 + 2.2 * l)},
-        properties: {h, l, ph: phase(i), out: Number.isNaN(out[i]) ? 1e9 : out[i]}});
+    const c = shapeOf(i);
+    for (let j = 0; j < 2; j++) {
+      puffs.push({lngLat: c.centre, alt: (c.alt ?? 0) + c.h + 2, rise: 16 + c.size * 0.4, radius: 3 + c.size * 0.25, seed: seedOf(i, j + 7),
+        out: Number.isNaN(out[i]) ? 1e9 : out[i], windDx: drift * Math.sin(toward), windDy: drift * Math.cos(toward)});
     }
   }
-  map.getSource('flames').setData({type: 'FeatureCollection', features: flames});
+  fireGL.setData(flames, puffs);
   map.getSource('fire-points').setData({type: 'FeatureCollection', features: points});
-  map.getSource('smoke').setData({type: 'FeatureCollection', features: smoke});
   const row = run.result.timeline[k];
   fui.frame.value = k;
   fui.minute.textContent = `Minute ${minute} of ${frames.at(-1).minute}`;
@@ -442,29 +440,17 @@ function showFrame(k) {
   if (typeof onFireFrame === 'function') onFireFrame();
 }
 
-/** Re-evaluate the animated paint: fire life cycle at the current (fractional) minute plus per-building flicker. */
+/** Ground glow at the current (fractional) minute, and the red/orange pulse of burning buildings. */
 let paintCount = 0;
 function paintFire() {
-  const m = displayMinute, t = clock, is3d = view === "3d";
+  const m = displayMinute, t = clock, is3d = view === '3d';
   paintCount++;
-  // 0.35 -> 1 while catching (first quarter of the burn), full blaze, then dying down to embers (0.2)
+  // 0.35 -> 1 while catching (first quarter of the burn), full blaze, then dying down to embers (0.2); same as fire-gl.js
   const intensity = ['let', 'p', ['/', ['-', m, ['get', 'ig']], ['get', 'dur']],
     ['case', ['<', ['var', 'p'], 0.25], ['+', 0.35, ['*', 2.6, ['var', 'p']]], ['<', ['var', 'p'], 0.7], 1,
       ['max', 0.2, ['-', 1, ['*', 2.5, ['-', ['var', 'p'], 0.7]]]]]];
-  const flicker = (speed, amp, k) => ['+', 1 - amp, ['*', amp, ['sin', ['+', t * speed, ['*', ['get', 'ph'], k]]]]];
-  if (is3d) for (const [tier, v] of Object.entries(TIER)) {
-    map.setPaintProperty(`flames-${tier}`, 'fill-extrusion-height',
-      ['+', ['get', 'h'], ['*', intensity, v.height, flicker(v.speed, v.amp, 1 + v.scale)]]);
-  }
-  map.setPaintProperty('fire-glow', 'heatmap-weight', ['*', intensity, flicker(5, 0.2, 1)]);
-  // Smoke rises in a loop and shrinks away in the minutes after a building has burned out
-  const rise = ['%', ['+', t * 0.18, ['*', ['get', 'ph'], 0.3], ['*', ['get', 'l'], 0.33]], 1];
-  const base = ['+', ['get', 'h'], 3, ['*', ['get', 'l'], 4], ['*', rise, 8]];
-  const fade = ['max', 0, ['min', 1, ['-', 1, ['/', ['-', m, ['get', 'out']], 8]]]];
-  if (is3d) map.setPaintProperty('smoke-3d', 'fill-extrusion-base', base);
-  if (is3d) map.setPaintProperty('smoke-3d', 'fill-extrusion-height', ['+', base, ['*', ['+', 2.5, ['*', ['get', 'l'], 1.5]], fade]]);
-  // Burning buildings pulse between deep red and orange, each with its own phase. Recolouring every building is the
-  // expensive part, so it runs on every third update (about 5 times a second).
+  map.setPaintProperty('fire-glow', 'heatmap-weight', ['*', intensity, ['+', 0.8, ['*', 0.2, ['sin', ['+', t * 5, ['get', 'ph']]]]]]);
+  // Recolouring every building is the expensive part, so it runs on every third update (about 5 times a second)
   if (paintCount % 3) return;
   const burn = ['interpolate', ['linear'], ['sin', ['+', t * 6, ['coalesce', ['feature-state', 'ph'], 0]]], -1, '#b3230a', 1, '#ff7000'];
   map.setPaintProperty(is3d ? 'buildings-3d' : 'buildings-2d', is3d ? 'fill-extrusion-color' : 'fill-color', buildingColor(burn));
@@ -482,7 +468,8 @@ function loop(ts) {
     if (k !== frameIndex) showFrame(k);
     if (displayMinute >= end) pause();
   }
-  if (ts - lastPaint > 70) { lastPaint = ts; paintFire(); } // ~14 updates a second: smooth, and keeps the map fast
+  fireGL.setClock(displayMinute, clock); // flames and smoke animate every frame on the GPU
+  if (ts - lastPaint > 70) { lastPaint = ts; paintFire(); }
 }
 
 /** Buildings burning or burned at the minute on screen (for routing around the fire). */
@@ -505,9 +492,10 @@ function clearFire() {
   cancelAnimationFrame(rafId);
   rafId = null;
   run = null;
-  if (!map.getSource('flames')) return;
+  if (!map.getSource('fire-points')) return;
   map.removeFeatureState({source: 'buildings'});
-  for (const src of ['flames', 'fire-points', 'smoke']) map.getSource(src).setData(empty());
+  map.getSource('fire-points').setData(empty());
+  fireGL.setData([], []);
   map.setPaintProperty('buildings-3d', 'fill-extrusion-color', buildingColor(FIRE.burnA));
   map.setPaintProperty('buildings-2d', 'fill-color', buildingColor(FIRE.burnA));
   fui.playback.hidden = true;

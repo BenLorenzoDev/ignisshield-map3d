@@ -217,22 +217,14 @@ map.on('load', async () => {
     paint: {'fill-color': buildingColor(FIRE.burnA), 'fill-opacity': ['match', ['feature-state', 'fire'], 'burning', 0.75, 'burned', 0.8, 0.15]}});
   map.addLayer({id: 'buildings-2d-line', type: 'line', source: 'buildings', paint: {'line-color': buildingColor(FIRE.burnA), 'line-width': 1.5}});
 
-  // Fire effects, animated by fire-ui.js: ground glow, three flame tiers (wide red base to narrow yellow core), smoke
+  // Fire effects, animated by fire-ui.js: ground glow under the flames
   map.addSource('fire-points', {type: 'geojson', data: empty()});
   map.addLayer({id: 'fire-glow', type: 'heatmap', source: 'fire-points', paint: {
     'heatmap-radius': ['interpolate', ['exponential', 2], ['zoom'], 15, 12, 20, 160],
     'heatmap-intensity': 0.9, 'heatmap-opacity': 0.85,
     'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'], 0, 'rgba(255,90,0,0)', 0.25, 'rgba(255,80,0,0.28)',
       0.55, 'rgba(255,130,0,0.55)', 0.8, 'rgba(255,200,70,0.75)', 1, 'rgba(255,240,190,0.85)']}}, 'buildings-3d');
-  map.addSource('flames', {type: 'geojson', data: empty()});
-  for (const [tier, color, opacity] of [['outer', '#d8330b', 0.5], ['mid', '#ff7b00', 0.62], ['core', '#ffd84a', 0.8]]) {
-    map.addLayer({id: `flames-${tier}`, type: 'fill-extrusion', source: 'flames', filter: ['==', ['get', 'tier'], tier],
-      paint: {'fill-extrusion-color': color, 'fill-extrusion-opacity': opacity, 'fill-extrusion-base': ['get', 'h'], 'fill-extrusion-height': ['get', 'h']}});
-  }
-  map.addSource('smoke', {type: 'geojson', data: empty()});
-  map.addLayer({id: 'smoke-3d', type: 'fill-extrusion', source: 'smoke',
-    paint: {'fill-extrusion-color': '#5f5f5f', 'fill-extrusion-opacity': 0.3, 'fill-extrusion-base': ['get', 'h'], 'fill-extrusion-height': ['get', 'h']}});
-  map.addLayer({id: 'smoke-2d', type: 'fill', source: 'smoke', paint: {'fill-color': '#4a4a4a', 'fill-opacity': 0.14}});
+  map.addLayer(fireGL.layer); // flames and smoke, drawn on the GPU (fire-gl.js)
 
   // Selected building and its corner handles
   map.addSource('edit', {type: 'geojson', data: empty()});
@@ -268,8 +260,8 @@ function applyLayers() {
   show('study-3d', is3d && ui.showInventory.checked);
   show('study-2d', !is3d && ui.showInventory.checked);
   show('study-2d-fill', !is3d && ui.showInventory.checked);
-  for (const id of ['buildings-3d', 'edit-3d', 'flames-outer', 'flames-mid', 'flames-core', 'smoke-3d']) show(id, is3d);
-  for (const id of ['buildings-2d', 'buildings-2d-line', 'edit-fill', 'edit-line', 'edit-mid', 'edit-vertex', 'smoke-2d']) show(id, !is3d);
+  for (const id of ['buildings-3d', 'edit-3d']) show(id, is3d);
+  for (const id of ['buildings-2d', 'buildings-2d-line', 'edit-fill', 'edit-line', 'edit-mid', 'edit-vertex']) show(id, !is3d);
   // The selected building is drawn from the edit source, so leave it out of the main layers
   const filter = ['all', ['!=', ['get', 'id'], selectedId ?? '']];
   if (!ui.showAi.checked) filter.push(['!', ['all', ['==', ['get', 'origin'], 'ai'], ['!', ['coalesce', ['get', 'edited'], false]]]]);

@@ -138,3 +138,26 @@ button.fire.big { padding: 10px; font-size: 15px; }
 .info-up { margin-top: 6px !important; font-weight: 600; }
 .info-now { background: #fff3e0; border-radius: 4px; padding: 4px 6px; font-variant-numeric: tabular-nums; }
 #input-info-line { position: absolute; z-index: 3; height: 2px; background: #d9480f; pointer-events: none; }
+/* ---------- wind & weather block ---------- */
+#weather-block { gap: 6px; border: 1px solid #cfe0f7; }
+.wb-head { font-size: 13.5px; }
+.wb-body { display: grid; grid-template-columns: 112px 1fr; gap: 10px; align-items: center; }
+#wind-dial { width: 112px; height: 112px; cursor: crosshair; outline: none; }
+#wind-dial:focus-visible .dial-ring { stroke: #d9480f; stroke-width: 3; }
+#wind-dial.locked { cursor: not-allowed; opacity: .7; }
+.dial-ring { fill: #fff; stroke: #1565c0; stroke-width: 2; }
+.dial-ticks line { stroke: #90a4ae; stroke-width: 1.5; }
+#wind-dial text { font: 700 11px system-ui, sans-serif; text-anchor: middle; fill: #546e7a; }
+#wind-dial .dial-n { fill: #c62828; }
+#dial-arrow { transition: transform .25s ease; }
+.dial-shaft { stroke: #1565c0; stroke-width: 4; stroke-linecap: round; }
+.dial-head { fill: #1565c0; }
+.dial-from { fill: #fff; stroke: #1565c0; stroke-width: 2; }
+.wb-side { display: grid; gap: 4px; }
+#wb-speed { width: 100%; }
+#wb-summary b { color: #0d47a1; }
+/* explained items */
+[data-info] { cursor: help; }
+.x-row[data-info], #panel input, #panel select { cursor: auto; }
+.metric[data-info]:hover, .metric[data-info]:focus { outline: 2px solid #d9480f; outline-offset: -2px; }
+.field .x-i, .check .x-i { display: inline; margin-left: 2px; }

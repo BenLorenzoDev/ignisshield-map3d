@@ -45,7 +45,7 @@
 
     <section class="step">
       <h3><span class="num">1</span> Fire inputs <span class="muted small">paper X1–X9</span></h3>
-      <label class="field"><span>Preset</span>
+      <label class="field" data-info="preset"><span>Preset <span class="x-i">ⓘ</span></span>
         <select id="scenario-source">
           <option value="custom">Custom: the values below</option>
           <option value="A">Trial A conditions</option>
@@ -56,9 +56,24 @@
       </label>
       <div id="trial-text" class="muted small"></div>
       <div id="x-inputs" class="x-table"></div>
-      <div id="live-weather" class="live">
+      <div id="weather-block" class="live" data-info="weather">
+        <div class="wb-head"><b>Wind &amp; weather</b> <span class="muted small">sets X4, X5, X8, X9 for the whole fire</span></div>
+        <div class="wb-body">
+          <svg id="wind-dial" viewBox="-62 -62 124 124" role="slider" aria-label="Wind direction: click where the wind comes from" data-info="Tw" tabindex="0">
+            <circle r="52" class="dial-ring"/>
+            <g class="dial-ticks"></g>
+            <text y="-40" class="dial-n">N</text><text x="42" y="4" class="dial-l">E</text><text y="48" class="dial-l">S</text><text x="-42" y="4" class="dial-l">W</text>
+            <g id="dial-arrow"><line y1="-44" y2="30" class="dial-shaft"/><path d="M0 44 L-8 26 L8 26 Z" class="dial-head"/><circle cy="-44" r="4" class="dial-from"/></g>
+          </svg>
+          <div class="wb-side">
+            <label class="field" data-info="Uw"><span>Wind speed <b id="wb-speed-val"></b></span>
+              <input id="wb-speed" type="range" min="0" max="20" step="0.5" aria-label="Wind speed in metres per second"></label>
+            <div id="wb-summary" class="small"></div>
+            <div class="muted small">Click the dial where the wind comes <b>from</b>.</div>
+          </div>
+        </div>
         <div class="row">
-          <button id="wx-load" class="primary-soft">Use live weather for X4, X5, X8, X9</button>
+          <button id="wx-load" class="primary-soft">Use live forecast</button>
           <select id="wx-hour" aria-label="Forecast hour" hidden></select>
         </div>
         <div id="wx-status" class="muted small"></div>
@@ -70,7 +85,7 @@
     <details class="step">
       <summary><span class="num">2</span> Run settings <span class="muted small">optional</span></summary>
       <div id="run-inputs"></div>
-      <label class="check"><input id="boundary-only" type="checkbox"> Only buildings inside the study boundary</label>
+      <label class="check" data-info="boundary"><input id="boundary-only" type="checkbox"> Only buildings inside the study boundary <span class="x-i">ⓘ</span></label>
       <details>
         <summary class="small">How the inputs feed the model (draft)</summary>
         <ul id="rules" class="small"></ul>

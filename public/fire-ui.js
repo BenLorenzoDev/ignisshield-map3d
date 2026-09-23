@@ -15,7 +15,7 @@ const fui = {
   metrics: $('#metrics'), headline: $('#result-headline'), clearFire: $('#clear-fire'), batchRun: $('#batch-run'), outputNotes: $('#output-notes'),
   logBtn: $('#log-btn'), log: $('#log'), logBody: $('#log-body'), logCount: $('#log-count'),
   logCsv: $('#log-csv'), logClear: $('#log-clear'),
-  live: $('#live-weather'), wxLoad: $('#wx-load'), wxHour: $('#wx-hour'), wxStatus: $('#wx-status')
+  live: $('#weather-block'), wxLoad: $('#wx-load'), wxHour: $('#wx-hour'), wxStatus: $('#wx-status')
 };
 
 // ---------- scenario settings (saved in this browser) ----------
@@ -45,7 +45,7 @@ function readField(v, input, allowBlank = false) {
 
 /** Run settings (step 2) and anything else that depends on the scenario, then the open building form. */
 function renderScenario() {
-  fui.runInputs.innerHTML = RUN_FIELDS.map(v => `<label class="field"><span>${v.name}</span><input id="run-${v.key}" type="number" min="${v.min}" max="${v.max}" step="${v.step}" value="${scenario[v.key]}"></label>`).join('');
+  fui.runInputs.innerHTML = RUN_FIELDS.map(v => `<label class="field" data-info="${v.key}"><span>${v.name} <span class="x-i">ⓘ</span></span><input id="run-${v.key}" type="number" min="${v.min}" max="${v.max}" step="${v.step}" value="${scenario[v.key]}"></label>`).join('');
   fui.boundaryOnly.checked = scenario.boundaryOnly;
   updateWind();
   if (selected()) updatePanel();
@@ -99,7 +99,7 @@ const num = v => (typeof v === 'number' ? v : '');
 /** One table row: symbol, meaning, value box, unit (the paper's Notations table). */
 function inputRow(v, value, placeholder, note) {
   const weather = v.scope === 'weather';
-  return `<label class="x-row${weather ? ' weather' : ''}" data-key="${v.key}">` +
+  return `<label class="x-row${weather ? ' weather' : ''}" data-key="${v.key}" data-info="${v.key}">` +
     `<span class="x-sym">${v.sym.replace(/ \((X\d)\)/, ' <i>$1</i>')}</span>` +
     `<span class="x-name">${v.name} <span class="x-i" aria-hidden="true">ⓘ</span>${weather ? ' <em>whole fire</em>' : ''}${note ? `<small>${note}</small>` : ''}</span>` +
     `<input id="x-${v.key}" type="number" min="${v.min}" max="${v.max}" step="${v.step}" value="${num(value)}" placeholder="${placeholder}">` +
@@ -135,10 +135,9 @@ function renderInputs(f) {
     const scope = P.BY_KEY[el.id.slice(2)].scope;
     el.disabled = trial ? (cloud.enabled && !canEdit()) : scope === 'building' && !canEdit();
   });
-  fui.live.hidden = Boolean(trial);
-  fui.wxStatus.textContent = scenario.custom.source ?? 'Weather entered by hand.';
+  renderWeather(values, trial);
   fui.resetTrial.hidden = !trial || (cloud.enabled && !canEdit());
-  if (infoKey) setTimeout(() => showInfo(infoKey), 0);
+  if (infoAnchor) setTimeout(() => showInfo(infoAnchor), 0);
   let m;
   try { m = P.toModel(buildingPaperValues(f), local); } catch (err) { fui.inputsNote.textContent = err.message; return; }
   fui.inputsNote.innerHTML = [
@@ -171,59 +170,179 @@ fui.xInputs.addEventListener('change', e => {
   updatePanel();
 });
 
-// ---------- information card beside the form: what each input means and what it does ----------
+// ---------- information card: explains any element marked data-info (inputs, settings, weather, outputs) ----------
+// Plain-language help for the controls that are not paper inputs (X1–X9 are in paper.js INFO, outputs in OUT_INFO)
+const HELP = {
+  preset: {title: 'Preset',
+    what: 'Where the nine input values come from. Custom uses this building’s own values (X1, X2, X3, X6, X7) plus the weather. Trial A–D are the paper’s four experimental conditions (Table 1): the same nine values for every building.',
+    get: 'Use Custom to explore a real situation. For the paper’s experiments, pick each Trial and run it three times (Run settings), then compare the results in the Run log.',
+    sim: 'Only changes which inputs go in. The fire severity is always worked out by the simulation: it is an output, never chosen here.'},
+  weather: {title: 'Wind & weather', sub: 'X4, X5, X8, X9',
+    what: 'The weather during the fire: humidity, temperature, wind speed and wind direction. It is the same for every building.',
+    get: '“Use live forecast” loads the current conditions or any hour of the next two days for Sitio Polo (Open-Meteo). Or set the wind with the dial and slider, or type the values in the table.',
+    sim: 'Dry, hot air makes buildings easier to ignite; the wind pushes the fire downwind and lets it jump wider gaps.'},
+  seed: {title: 'First random seed',
+    what: 'Fire spread has an element of chance, like real fire: a spark may or may not jump a gap. The seed fixes that chance, so the same inputs and seed always give exactly the same fire.',
+    get: 'Keep 42 unless you want different luck. Write the seed down with your results so anyone can repeat the run.',
+    sim: 'The model draws one random number for each building at risk each minute; the seed starts that sequence.'},
+  repeats: {title: 'Runs',
+    what: 'How many times to simulate the same inputs, each with a different seed (seed, seed+1, …).',
+    get: 'The paper runs each trial three times. More runs give a more reliable average but take a little longer.',
+    sim: 'The Run log shows every run and the average ± spread of the severity and burned area.'},
+  minutes: {title: 'Maximum model minutes',
+    what: 'The longest time the simulated fire is allowed to burn (1–240 minutes).',
+    get: 'Use 60 for a first look. Try the time the fire truck needs to arrive to see what burns before help comes.',
+    sim: 'The run stops earlier if the fire goes out. Total simulation time (Y8) can never be longer than this.'},
+  boundary: {title: 'Only buildings inside the study boundary',
+    what: 'Limits the fire to the buildings inside the red dashed line, the study area of Sitio Polo.',
+    get: 'Tick it for results about Sitio Polo only. Untick it to let the fire reach every mapped building around.',
+    sim: 'Buildings outside cannot catch fire. The severity index (Y1) then compares the burned area with the study area only, so the same fire scores higher.'}
+};
 const infoCard = $('#input-info'), infoLine = $('#input-info-line');
-let infoKey = null;     // row shown in the card
-let focusKey = null;    // row being typed in (the card returns to it after a hover)
-function showInfo(key) {
-  const f = selected(), row = fui.xInputs.querySelector(`.x-row[data-key="${key}"]`);
-  if (!f || !row || fui.xInputs.closest('#panel').hidden) { hideInfo(); return; }
-  infoKey = key;
-  const v = P.BY_KEY[key], info = P.INFO[key], weather = v.scope === 'weather';
-  let now;
-  try {
-    const x = buildingPaperValues(f), typed = row.querySelector('input').value;
-    if (typed !== '') x[key] = P.check(key, Number(typed)); // preview the number being typed
-    now = info.now(x, P.toModel(x, measuredDensity().get(f.properties.id)));
+let infoAnchor = null;   // element the card explains
+let focusAnchor = null;  // element being typed in (the card returns to it after a hover)
+const WIND_WORDS = [[0.5, 'calm'], [3.4, 'light breeze'], [5.5, 'gentle breeze'], [8, 'moderate breeze'], [10.8, 'fresh breeze'], [17.2, 'strong wind'], [Infinity, 'gale or typhoon']];
+const windWords = ms => WIND_WORDS.find(([hi]) => ms < hi)[1];
+
+function infoContent(key) {
+  const sec = (h, t) => `<h4>${h}</h4><p>${t}</p>`;
+  if (P.BY_KEY[key]) {
+    const f = selected(), v = P.BY_KEY[key], info = P.INFO[key], trial = P.TRIALS[scenario.source];
+    let now;
+    try {
+      const x = buildingPaperValues(f), el = document.getElementById(`x-${key}`);
+      if (el && el.value !== '') x[key] = P.check(key, Number(el.value)); // preview the number being typed
+      now = info.now(x, P.toModel(x, measuredDensity().get(f.properties.id)));
+    } catch (err) { now = err.message; }
+    return `<div class="info-head"><span class="x-sym">${v.sym}</span> ${v.name} <span class="info-unit">${v.unit}</span></div>
+      ${v.scope === 'weather' ? '<div class="info-tag">Weather: the same value applies to every building in the fire.</div>' : ''}
+      ${sec('What it is', info.what)}${sec('How to get the value', info.get)}${sec('How the simulation uses it', info.sim)}
+      <p class="info-up">${info.up}</p>
+      <h4>With the value${trial ? ` of Trial ${scenario.source}` : ''} now</h4><p class="info-now">${now}</p>
+      ${['Mb', 'Db', 'O2'].includes(key) ? '<p class="muted small">The link from this paper unit to the model is a draft rule until the students give their formula.</p>' : ''}`;
   }
-  catch (err) { now = err.message; }
-  const trial = P.TRIALS[scenario.source];
-  infoCard.innerHTML = `
-    <div class="info-head"><span class="x-sym">${v.sym}</span> ${v.name} <span class="info-unit">${v.unit}</span></div>
-    ${weather ? '<div class="info-tag">Weather: the same value applies to every building in the fire.</div>' : ''}
-    <h4>What it is</h4><p>${info.what}</p>
-    <h4>How to get the value</h4><p>${info.get}</p>
-    <h4>How the simulation uses it</h4><p>${info.sim}</p>
-    <p class="info-up">${info.up}</p>
-    <h4>With the value${trial ? ` of Trial ${scenario.source}` : ''} now</h4><p class="info-now">${now}</p>
-    ${key === 'Mb' || key === 'Db' || key === 'O2' ? '<p class="muted small">The link from this paper unit to the model is a draft rule until the students give their formula.</p>' : ''}`;
-  infoCard.hidden = infoLine.hidden = false;
+  if (key.startsWith('out-')) {
+    const i = Number(key.slice(4)), o = P.outputs(run.result.metrics)[i], info = P.OUT_INFO[i];
+    return `<div class="info-head"><span class="x-sym">${o.sym}</span> ${o.name} <span class="info-unit">${o.unit}</span></div>
+      ${sec('What it means', info.what)}${sec('How it is calculated', info.how)}${sec('How to read it', info.read)}
+      <h4>In this run</h4><p class="info-now">${outputNow(i, o)}</p>`;
+  }
+  const h = HELP[key];
+  return `<div class="info-head">${h.title}${h.sub ? ` <span class="info-unit">${h.sub}</span>` : ''}</div>
+    ${sec('What it is', h.what)}${sec('How to use it', h.get)}${sec('In the simulation', h.sim)}`;
+}
+
+/** A sentence about this run's value of output i. */
+function outputNow(i, o) {
+  const r = run.result, frames = r.frames, last = frames.at(-1), ignited = last.states.filter(s => s > 0).length;
+  const peak = r.timeline.reduce((b, row) => (row.HRR_MW > b.HRR_MW ? row : b), r.timeline[0]);
+  const toward = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(((run.wind.Tw + 180) % 360) / 45) % 8];
+  switch (i) {
+    case 0: return `${o.text}: ${(o.value * 100).toFixed(1)} % of the floor area in this run caught fire (${ignited.toLocaleString()} of ${run.ids.length.toLocaleString()} buildings).`;
+    case 1: return `${o.text} kW/m at the fiercest minute.`;
+    case 2: return `${o.text} m/min ≈ ${Math.round(o.value * 60).toLocaleString()} m per hour.`;
+    case 3: return `${o.text}, reached at minute ${peak.Minute} with ${peak.Burning} buildings burning at once.`;
+    case 4: return `${o.text} m² across ${ignited.toLocaleString()} buildings.`;
+    case 5: return `${o.text}; the wind was blowing toward ${toward}.`;
+    case 6: return `Buildings in this run burned for ${o.text} minutes each on average.`;
+    default: return r.status === 'Extinguished' ? `The fire went out after ${o.text}.` : `${o.text}: the fire was still burning when the run limit was reached.`;
+  }
+}
+
+function showInfo(anchor) {
+  const key = anchor?.dataset.info;
+  if (!key || (P.BY_KEY[key] && !selected()) || (key.startsWith('out-') && !run)) { hideInfo(); return; }
+  infoAnchor = anchor;
+  infoCard.innerHTML = infoContent(key);
+  infoCard.hidden = false;
   placeInfo();
 }
 function placeInfo() {
-  if (infoCard.hidden || !infoKey) return;
-  const row = fui.xInputs.querySelector(`.x-row[data-key="${infoKey}"]`);
-  if (!row) { hideInfo(); return; }
-  const panel = fui.xInputs.closest('#panel').getBoundingClientRect(), r = row.getBoundingClientRect(), input = row.querySelector('input').getBoundingClientRect();
-  const left = panel.right + 36, mid = r.top + r.height / 2;
-  const topMin = panel.top, topMax = window.innerHeight - infoCard.offsetHeight - 12;
-  infoCard.style.left = `${left}px`;
-  infoCard.style.top = `${Math.max(topMin, Math.min(topMax, mid - 40))}px`;
-  // connector from the field to the card, as long as the row is visible in the panel
-  const visible = mid > panel.top && mid < panel.bottom;
-  infoLine.hidden = !visible;
-  Object.assign(infoLine.style, {left: `${input.right}px`, top: `${mid - 1}px`, width: `${left - input.right}px`});
+  if (infoCard.hidden || !infoAnchor) return;
+  if (!document.body.contains(infoAnchor)) { // the form was redrawn: find the same item again
+    infoAnchor = document.querySelector(`[data-info="${infoAnchor.dataset.info}"]`);
+    if (!infoAnchor) { hideInfo(); return; }
+  }
+  const a = infoAnchor.getBoundingClientRect(), w = infoCard.offsetWidth, h = infoCard.offsetHeight;
+  const panel = infoAnchor.closest('#panel');
+  if (panel) {
+    // beside the form, joined to the field by a line
+    const p = panel.getBoundingClientRect(), mid = a.top + Math.min(a.height, 40) / 2, left = p.right + 36;
+    infoCard.style.left = `${left}px`;
+    infoCard.style.top = `${Math.max(p.top, Math.min(window.innerHeight - h - 12, mid - 40))}px`;
+    const field = infoAnchor.querySelector('input, select') ?? infoAnchor, from = field.getBoundingClientRect().right;
+    infoLine.hidden = !(mid > p.top && mid < p.bottom);
+    Object.assign(infoLine.style, {left: `${from}px`, top: `${mid - 1}px`, width: `${Math.max(0, left - from)}px`});
+  } else {
+    // results: above the tile
+    infoCard.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, a.left + a.width / 2 - w / 2))}px`;
+    infoCard.style.top = `${Math.max(8, a.top - h - 10)}px`;
+    infoLine.hidden = true;
+  }
 }
-function hideInfo() { infoKey = null; infoCard.hidden = infoLine.hidden = true; }
-fui.xInputs.addEventListener('mouseover', e => { const row = e.target.closest('.x-row'); if (row && row.dataset.key !== infoKey) showInfo(row.dataset.key); });
-fui.xInputs.addEventListener('mouseleave', () => (focusKey ? showInfo(focusKey) : hideInfo()));
-fui.xInputs.addEventListener('focusin', e => { const row = e.target.closest('.x-row'); if (row) { focusKey = row.dataset.key; showInfo(focusKey); } });
-fui.xInputs.addEventListener('focusout', () => setTimeout(() => {
-  if (!fui.xInputs.contains(document.activeElement)) { focusKey = null; if (!fui.xInputs.matches(':hover')) hideInfo(); }
+function hideInfo() { infoAnchor = null; infoCard.hidden = infoLine.hidden = true; }
+
+const helpZone = el => el?.closest?.('#panel, #playback');
+document.addEventListener('mouseover', e => {
+  if (e.target.closest?.('#input-info')) return;
+  const a = e.target.closest?.('[data-info]');
+  if (a && helpZone(a)) { if (a !== infoAnchor) showInfo(a); }
+  else if (infoAnchor && !helpZone(e.target)) (focusAnchor ? showInfo(focusAnchor) : hideInfo());
+});
+document.addEventListener('focusin', e => {
+  const a = e.target.closest?.('[data-info]');
+  if (a && helpZone(a)) { focusAnchor = a; showInfo(a); }
+});
+document.addEventListener('focusout', () => setTimeout(() => {
+  const a = document.activeElement?.closest?.('[data-info]');
+  if (!a || !helpZone(a)) { focusAnchor = null; if (!document.querySelector('[data-info]:hover')) hideInfo(); }
 }, 0));
-fui.xInputs.addEventListener('input', () => { if (infoKey) setTimeout(() => showInfo(infoKey), 0); });
+fui.xInputs.addEventListener('input', () => { if (infoAnchor) setTimeout(() => showInfo(infoAnchor), 0); });
 fui.xInputs.closest('#panel').addEventListener('scroll', placeInfo);
 window.addEventListener('resize', placeInfo);
+
+// ---------- wind dial and speed slider (write to X9 and X8, so the table and the dial always agree) ----------
+const dial = $('#wind-dial'), speed = $('#wb-speed');
+dial.querySelector('.dial-ticks').innerHTML = Array.from({length: 16}, (_, k) => {
+  const a = k * 22.5 * Math.PI / 180, r1 = k % 4 ? 49 : 46;
+  return `<line x1="${(Math.sin(a) * r1).toFixed(1)}" y1="${(-Math.cos(a) * r1).toFixed(1)}" x2="${(Math.sin(a) * 52).toFixed(1)}" y2="${(-Math.cos(a) * 52).toFixed(1)}"/>`;
+}).join('');
+function setInput(key, value) {
+  const el = document.getElementById(`x-${key}`);
+  if (!el || el.disabled) { showHint('These weather values come from the Trial preset and cannot be changed here.', 5000); return; }
+  el.value = value;
+  el.dispatchEvent(new Event('change', {bubbles: true}));
+}
+function dialAngle(e) {
+  const r = dial.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+  return (Math.round(Math.atan2(dx, -dy) * 180 / Math.PI / 5) * 5 + 360) % 360; // where the click is = where the wind comes from
+}
+dial.addEventListener('click', e => setInput('Tw', dialAngle(e)));
+dial.addEventListener('keydown', e => {
+  const step = {ArrowRight: 15, ArrowUp: 15, ArrowLeft: -15, ArrowDown: -15}[e.key];
+  if (!step) return;
+  e.preventDefault();
+  const cur = Number(document.getElementById('x-Tw')?.value) || 0;
+  setInput('Tw', (cur + step + 360) % 360);
+});
+speed.addEventListener('input', () => { $('#wb-speed-val').textContent = `${Number(speed.value).toFixed(1)} m/s · ${windWords(Number(speed.value))}`; });
+speed.addEventListener('change', () => setInput('Uw', Number(speed.value)));
+
+/** Draw the dial, slider and summary for the wind in use. */
+function renderWeather(values, trial) {
+  const Tw = values.Tw ?? 0, Uw = values.Uw ?? 0, c = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'], dir = d => c[Math.round(d / 45) % 8];
+  dial.querySelector('#dial-arrow').setAttribute('transform', `rotate(${Tw})`);
+  speed.value = Math.min(20, Uw);
+  $('#wb-speed-val').textContent = `${Uw} m/s · ${windWords(Uw)}`;
+  $('#wb-summary').innerHTML = `From <b>${dir(Tw)}</b> (${Tw}°) at <b>${Uw} m/s</b> (${(Uw * 3.6).toFixed(0)} km/h): the fire is pushed toward <b>${dir((Tw + 180) % 360)}</b>. Humidity ${values.Hr} %, ${values.Ta} °C.`;
+  const locked = trial ? (cloud.enabled && !canEdit()) : false;
+  dial.classList.toggle('locked', locked);
+  speed.disabled = locked;
+  fui.wxLoad.disabled = Boolean(trial);
+  fui.wxLoad.title = trial ? 'The Trial preset has its own weather. Switch Preset to Custom to use the live forecast.' : '';
+  fui.wxHour.hidden = Boolean(trial) || !forecast;
+  fui.wxStatus.textContent = trial ? `Trial ${scenario.source} sets its own weather. Switch Preset to Custom to use the live forecast.` : (scenario.custom.source ?? 'Weather entered by hand.');
+}
 
 // ---------- close, and the "How to run a fire" guide ----------
 const GUIDE_KEY = 'ignisshield-map3d.guide-hidden';
@@ -429,8 +548,8 @@ function showRun(id) {
   const outs = P.outputs(run.result.metrics), sf = outs[0].value, lvl = P.level(sf);
   // The severity is the result of the run (Y1), shown first
   fui.headline.innerHTML = `Final result: <span class="sev sev-${lvl.toLowerCase()}">${lvl}</span> severity · Sf ${sf.toFixed(3)} · ${Math.round(outs[4].value).toLocaleString()} m² burned · ${outs[7].text.split(' · ')[0]}`;
-  fui.metrics.innerHTML = outs.map(o =>
-    `<div class="metric"><span>${o.sym} ${o.name}</span><strong>${o.text}</strong><small>${o.unit}</small></div>`).join('');
+  fui.metrics.innerHTML = outs.map((o, i) =>
+    `<div class="metric" data-info="out-${i}" tabindex="0"><span>${o.sym} ${o.name}</span><strong>${o.text}</strong><small>${o.unit}</small></div>`).join('');
   fui.playback.hidden = false;
   updateGuide();
   displayMinute = 0;

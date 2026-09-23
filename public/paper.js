@@ -166,6 +166,34 @@
     }
   };
 
+  // ---------- plain-language help for each output Y1..Y8 (same order as outputs()) ----------
+  const OUT_INFO = [
+    {what: 'One overall score for how bad the fire was, from 0 (nothing burned) to 1 (everything burned).',
+      how: 'The share of the floor area of all buildings in the run that caught fire. Below 0.1 is Low, below 0.3 Moderate, below 0.6 High, otherwise Catastrophic.',
+      read: 'It depends on how many buildings are in the run: the same fire scores higher when only the study boundary is included.'},
+    {what: 'How much heat the fire front gives off per metre of its edge: how hard it would be to approach or fight.',
+      how: 'At the worst minute: the heat output of all burning buildings divided by the total length of their outlines. An estimate from assumed heat per m², not a measurement.',
+      read: 'Higher means a fiercer front that is harder to get close to.'},
+    {what: 'How fast the fire front moved away from the building where it started.',
+      how: 'The farthest distance the fire reached from the start, divided by the minutes it took to get there.',
+      read: 'Multiply by 60 for metres per hour. Compare it with how long the fire truck needs to arrive.'},
+    {what: 'The total heat being given off by everything burning, at the worst minute of the fire.',
+      how: 'For every burning building: floor area × 80 kW/m² × material factor × dryness × ventilation, added up. An estimate from assumed values, not a measurement.',
+      read: 'Shown in megawatts (MW) and kilowatts (kW): 1 MW = 1,000 kW.'},
+    {what: 'The total floor area of all buildings that caught fire.',
+      how: 'Adds up the footprint area of every building that ignited, including any still burning when the run ended.',
+      read: 'Divide by about 60–100 m² to get a rough number of homes.'},
+    {what: 'The main direction the fire spread from the starting building, in degrees clockwise from north.',
+      how: 'The average direction from the starting building to every building that burned, weighted by each building’s area.',
+      read: 'Usually close to the direction the wind blows toward, unless buildings or gaps steer the fire another way.'},
+    {what: 'How long a building keeps burning once it catches fire, on average.',
+      how: 'The model gives each building a burn time from its material, number of households, humidity and ventilation; this is the average over the buildings that ignited. Draft definition, pending the students’ formula.',
+      read: 'Longer burning gives the fire more time to reach neighbours, and firefighters more to put out.'},
+    {what: 'How long the simulated fire lasted, from the first flame until it went out or the run limit was reached.',
+      how: 'The minutes simulated by the model, shown in minutes, seconds and hours. It is the modelled fire time, not how long the computer took.',
+      read: 'If it equals the maximum model minutes you set, the fire was still burning when the run stopped.'}
+  ];
+
   // ---------- outputs Y1..Y8 ----------
   const LEVELS = [[0.1, 'Low'], [0.3, 'Moderate'], [0.6, 'High'], [Infinity, 'Catastrophic']]; // model.py thresholds; "Extreme" renamed per the paper
   const level = sf => LEVELS.find(([hi]) => sf < hi)[1];
@@ -204,7 +232,7 @@
     return changed;
   }
 
-  const api = {INPUTS, BY_KEY, DEFAULTS, RULES, RULE_TEXT, TRIALS, OUTPUT_NOTES, INFO, materialClass, localDensity, check, toModel, level, outputs, migrate};
+  const api = {INPUTS, BY_KEY, DEFAULTS, RULES, RULE_TEXT, TRIALS, OUTPUT_NOTES, INFO, OUT_INFO, materialClass, localDensity, check, toModel, level, outputs, migrate};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.IgnisPaper = api;
 })(globalThis);

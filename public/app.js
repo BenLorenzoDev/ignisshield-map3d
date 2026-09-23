@@ -268,6 +268,7 @@ map.on('load', async () => {
   ui.count.textContent = store.features.length;
   initRoutes(data);
   initField();
+  initEvac();
   document.body.classList.remove('loading'); // toolbar usable once every layer exists
   applyLayers();
 });
@@ -482,6 +483,7 @@ map.on('mouseup', () => {
 });
 
 map.on('click', e => {
+  if (safeClick(e)) return;
   if (routeClick(e)) return;
   if (fieldClick(e)) return;
   if (drawing) {

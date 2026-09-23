@@ -147,6 +147,24 @@ Public maps miss most of Polo's interior alleys, so students walk them with Stra
 Shared mode needs `supabase/upgrade-2-field-paths.sql` run once. Raw GPX files belong in `field-data/gpx/`, which is kept out of the repository.
 
 
+## Evacuation during a fire
+
+Every fire run also shows the residents walking to safety (`public/evac.js`, display in `public/evac-ui.js`). It uses the fire's minute-by-minute result and does not change the fire.
+
+- **Who leaves:** residents of every building the fire comes within 30 m of leave at that minute, or when their own building catches. People per building = households (X6) × 5, the Baliwagan average (2026 census: 6,141 people in 1,209 households).
+- **Where to:** the quickest reachable safe place. That is either the **main road** (every junction on a trunk, primary, secondary or tertiary road; the paper describes it as cemented and passable) or a **safe area** that editors add in **Routes → Safe areas** (e.g. a covered court). Safe areas are shared by the class.
+- **Route:** the walking network, meaning inventory roads plus the alleys drawn from the GPS walks, with the same travel times as Routes (4.5 km/h, slowed by narrow and crowded streets). Routes avoid every street within 8 m of a building that was already burning when people set off. A safe place stops counting once fire is within 16 m of it.
+- **On the map:**
+  - **white dots** are walking;
+  - **green** reached safety;
+  - **red** are cut off (every way out was blocked);
+  - **grey** have no mapped road or alley within 80 m.
+
+  Solid green lines are routes along mapped streets. Dotted lines are the walk from home to the nearest mapped one, where the real alley isn't drawn yet.
+- **Results and log:** people who left, reached safety, had no safe route or had no mapped path; average and longest evacuation time. Logged per run (`evac_*` columns in the CSV).
+- **Limits:** everyone leaves at once and walks at 4.5 km/h, with no crowding, panic or waiting for family, so real evacuations take longer. Routes are only as good as the mapped alleys.
+
+
 ## Model and tests
 
 `public/fire.js` and `public/routing.js` are line-for-line ports of IgnisShield-Web's `backend/model.py` and `engine.py` (model 0.4.0). They use Python's own random number generator, so a seed reproduces the Python run exactly. It is an uncalibrated teaching model with disclosed assumptions, not a forecast.

@@ -234,3 +234,10 @@ button.fire.big { padding: 10px; font-size: 15px; }
   #panel { width: 370px; }
   .x-row { grid-template-columns: 52px 1fr 76px 64px; }
 }
+/* evacuation */
+.evac-legend { gap: 4px; font-size: 12.5px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #263238; margin-left: 6px; vertical-align: -1px; }
+.dot.moving { background: #fff; border-color: #00a152; } .dot.arrived { background: #00c853; } .dot.trapped { background: #ff1744; }
+#evac-summary { font-size: 13px; background: #e8f5e9; border-radius: 6px; padding: 6px 8px; }
+.ev-safe { color: #1b5e20; font-weight: 600; } .ev-trapped { color: #b71c1c; font-weight: 600; }
+#safe-list input { font: inherit; padding: 3px 5px; flex: 1; min-width: 0; }

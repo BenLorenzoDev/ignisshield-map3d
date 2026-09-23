@@ -193,6 +193,14 @@ const HELP = {
     what: 'The longest time the simulated fire is allowed to burn (1–240 minutes).',
     get: 'Use 60 for a first look. Try the time the fire truck needs to arrive to see what burns before help comes.',
     sim: 'The run stops earlier if the fire goes out. Total simulation time (Y8) can never be longer than this.'},
+  evac: {title: 'Evacuation on foot',
+    what: 'Where the residents go. When the fire comes within 30 m of a building, or the building itself catches, its residents leave and walk to the nearest safe place: a safe area set by the class (Routes panel) or the main road, which the paper describes as cemented and passable. People per building = households (X6) × 5, the Baliwagan average (2026 census).',
+    get: 'Watch the dots: white = walking, green = reached safety, red = cut off (every street out was blocked by fire when they set off), grey = no mapped road or alley near their home yet. Solid green = route along mapped roads and alleys; dotted = the walk from home to the nearest mapped one, where the real alley is not drawn yet. Draw the missing alleys (Draw path) to make routes realistic.',
+    sim: 'Routes use the walking network (roads plus the alleys drawn from the GPS walks), with the same travel times as Routes, and avoid every street within 8 m of a building already burning when they leave. It does not change the fire. Times assume people leave at once and walk at 4.5 km/h; no crowding, so real evacuations are slower.'},
+  safe: {title: 'Safe areas',
+    what: 'Places where people should gather in a fire: open spaces away from buildings, such as a covered court, plaza or school ground.',
+    get: 'Editors click “Add safe area”, then the map. Name each one (e.g. “Baliwagan Covered Court”). Ask the BFP or barangay which places are official.',
+    sim: 'Every evacuee walks to the quickest reachable safe area or the main road. A safe area stops counting if the fire gets within 16 m of it. It applies to fires started after it is added.'},
   boundary: {title: 'Only buildings inside the study boundary',
     what: 'Limits the fire to the buildings inside the red dashed line, the study area of Sitio Polo.',
     get: 'Tick it for results about Sitio Polo only. Untick it to let the fire reach every mapped building around.',
@@ -287,7 +295,7 @@ function placeInfo() {
 function hideInfo() { infoAnchor = null; infoCard.hidden = infoLine.hidden = true; }
 infoCard.addEventListener('click', () => { if (infoCard.classList.contains('sheet')) hideInfo(); }); // tap to close on phones
 
-const helpZone = el => el?.closest?.('#panel, #playback');
+const helpZone = el => el?.closest?.('#panel, #playback, #routes');
 document.addEventListener('mouseover', e => {
   if (e.target.closest?.('#input-info')) return;
   const a = e.target.closest?.('[data-info]');
@@ -431,6 +439,7 @@ function onRemoteRun(row) {
   if (!fui.log.hidden) renderLog();
 }
 function onRemoteSetting(row) {
+  if (row?.key === 'safe_areas') { onRemoteSafeAreas(row.value); return; }
   if (row?.key !== 'trials') return;
   scenario.trials = {...draftTrials(), ...row.value};
   if (P.TRIALS[scenario.source]) renderScenario();
@@ -500,13 +509,16 @@ async function startFire() {
     const x = buildingPaperValues(origin), local = measuredDensity().get(origin.properties.id);
     const ids = features.map(f => f.properties.id);
     const w = trial ? scenario.trials[scenario.source] : scenario.custom, wind = {Tw: w.Tw, Uw: w.Uw}; // smoke drifts downwind
+    // Evacuation on foot for every run (same network and residents for the whole batch)
+    const evacCtx = prepareEvac(features, inputs, features.map(f => buildingPaperValues(f).Nh));
     let first = null;
     const records = [];
     for (let k = 0; k < scenario.repeats; k++) {
       const seed = scenario.seed + k;
       const result = IgnisFire.simulate(features, f => byFeature.get(f), index, seed, scenario.minutes);
       const id = `${batch}-${k}`;
-      sessionRuns.set(id, {id, result, features, ids, seed, wind});
+      const evac = evacCtx ? evacCtx.evaluate(result.frames) : null, es = evac?.summary;
+      sessionRuns.set(id, {id, result, features, ids, seed, wind, evac});
       const out = P.outputs(result.metrics);
       records.push({
         id, batch, utc, run_in_batch: k + 1, scenario: trial ? `Trial ${scenario.source} conditions` : 'Custom',
@@ -517,6 +529,8 @@ async function startFire() {
         weather_source: trial ? 'trial values' : (scenario.custom.source ?? 'entered by hand'),
         Y1_Sf: out[0].value, level: P.level(out[0].value), Y2_If_kW_m: out[1].value, Y3_R_m_min: out[2].value, Y4_Q_MW: out[3].value,
         Y5_Ab_m2: out[4].value, Y6_phi_deg: out[5].value, Y7_tau_min: out[6].value, Y8_Tsim_min: out[7].value,
+        evac_people: es?.people ?? '', evac_reached_safety: es?.safe ?? '', evac_no_safe_route: es?.trapped ?? '', evac_no_mapped_path: es?.nopath ?? '',
+        evac_avg_min: es ? +es.avgMin.toFixed(2) : '', evac_max_min: es ? +es.maxMin.toFixed(2) : '', safe_areas: safeAreas.map(s => s.name).join('; '),
         status: result.status, model: result.model, calc_s: result.metrics.Total_Simulation_Time_Sec
       });
       first ??= id;
@@ -556,6 +570,7 @@ function showRun(id) {
   fui.headline.innerHTML = `Final result: <span class="sev sev-${lvl.toLowerCase()}">${lvl}</span> severity · Sf ${sf.toFixed(3)} · ${Math.round(outs[4].value).toLocaleString()} m² burned · ${outs[7].text.split(' · ')[0]}`;
   fui.metrics.innerHTML = outs.map((o, i) =>
     `<div class="metric" data-info="out-${i}" tabindex="0"><span>${o.sym} ${o.name}</span><strong>${o.text}</strong><small>${o.unit}</small></div>`).join('');
+  evacShow(run);
   setResults(false);
   updateWind();
   fui.playback.hidden = false;
@@ -684,7 +699,7 @@ function loop(ts) {
     if (displayMinute >= end) pause();
   }
   fireGL.setClock(displayMinute, clock); // flames and smoke animate every frame on the GPU
-  if (ts - lastPaint > 70) { lastPaint = ts; paintFire(); }
+  if (ts - lastPaint > 70) { lastPaint = ts; paintFire(); evacTick(displayMinute); }
 }
 
 /** Buildings burning or burned at the minute on screen (for routing around the fire). */
@@ -703,6 +718,7 @@ function pause() {
   fui.play.textContent = 'Play';
 }
 function clearFire() {
+  evacClear();
   pause();
   cancelAnimationFrame(rafId);
   rafId = null;

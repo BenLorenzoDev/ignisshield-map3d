@@ -159,6 +159,11 @@
     </div>
     <div id="rt-result"></div>
     <hr>
+    <strong class="small" data-info="safe">Safe areas (evacuation) <span class="x-i">ⓘ</span></strong>
+    <div id="safe-list" class="small"></div>
+    <button id="add-safe" class="soft">Add safe area</button>
+    <div class="muted small">During a fire, residents walk to the nearest safe area or to the main road, whichever is quicker.</div>
+    <hr>
     <strong class="small">Field GPS tracks</strong>
     <div id="tracks-list" class="small"></div>
     <label class="file-btn">Import GPX walks<input id="gpx-input" type="file" accept=".gpx" multiple hidden></label>
@@ -198,6 +203,7 @@
       <select id="batch-run" aria-label="Run in this batch"></select>
       <span id="wind-arrow" aria-hidden="true">↑</span><span id="wind-text"></span>
       <span class="legend"><i style="background:#ff5a1f"></i>Burning <i style="background:#2a2522"></i>Burned</span>
+      <label class="check evac-legend" data-info="evac"><input id="evac-toggle" type="checkbox" checked> Evacuation <i class="dot moving"></i>walking <i class="dot arrived"></i>safe <i class="dot trapped"></i>cut off</label>
       <span id="run-status" class="muted"></span>
     </div>
     <div id="running-note" class="row">
@@ -206,6 +212,7 @@
     </div>
     <div id="results" hidden>
       <div id="result-headline"></div>
+      <div id="evac-summary" data-info="evac" hidden></div>
       <details open>
         <summary>All outputs (paper Y1–Y8)</summary>
         <div id="metrics"></div>
@@ -221,12 +228,14 @@
   <script src="fire.js"></script>
   <script src="paper.js"></script>
   <script src="routing.js"></script>
+  <script src="evac.js"></script>
   <script src="fire-gl.js"></script>
   <script src="field.js"></script>
   <script src="app.js"></script>
   <script src="fire-ui.js"></script>
   <script src="route-ui.js"></script>
   <script src="paths-ui.js"></script>
+  <script src="evac-ui.js"></script>
   <script src="cloud-ui.js"></script>
 </body>
 </html>

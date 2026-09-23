@@ -167,3 +167,70 @@ button.fire.big { padding: 10px; font-size: 15px; }
 @keyframes results-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 #results { display: grid; gap: 6px; }
 #results[hidden] { display: none; }
+
+/* ======================= responsive: tablets and phones ======================= */
+#menu-btn { display: none; }
+#input-info.sheet { position: fixed; left: 8px; right: 8px; top: calc(var(--toolbar-bottom, 52px) + 8px); width: auto; max-width: none;
+  max-height: 42vh; overflow-y: auto; z-index: 6; }
+#input-info.sheet::after { content: 'Tap to close'; display: block; margin-top: 6px; font-size: 11px; color: #888; text-align: right; }
+.batch { overflow-x: auto; }
+
+/* tablets */
+@media (max-width: 1024px) {
+  #panel { width: 340px; }
+  .side { width: 300px; }
+  .side.wide { width: min(560px, calc(100% - 80px)); }
+  #playback { width: calc(100% - 24px); }
+  #guide { width: 300px; }
+}
+
+/* phones */
+@media (max-width: 700px) {
+  body { font-size: 14px; }
+  #toolbar { left: 8px; right: 52px; top: 8px; gap: 6px; flex-wrap: nowrap; }
+  #toolbar > * { display: none; }
+  #toolbar > #title, #toolbar > #menu-btn { display: flex; align-items: center; }
+  #title { flex: 1; min-width: 0; font-size: 13px; padding: 7px 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #menu-btn { flex: 0 0 auto; background: #2d3436; color: #fff; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.25); padding: 8px 12px; }
+  /* open menu: every tool as a list */
+  body.menu-open #toolbar { flex-direction: column; flex-wrap: nowrap; align-items: stretch; right: 8px; max-height: calc(100vh - 16px); overflow-y: auto;
+    background: rgba(255,255,255,.98); padding: 8px; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.3); z-index: 20; }
+  body.menu-open #toolbar > * { display: flex; box-shadow: none; }
+  body.menu-open #toolbar > #title { order: -2; }
+  body.menu-open #toolbar > #menu-btn { order: -1; justify-content: center; }
+  body.menu-open #toolbar > button { justify-content: center; padding: 11px; font-size: 15px; }
+  body.menu-open #toolbar .group { flex-wrap: wrap; }
+  body.menu-open #toolbar .group > * { flex: 1; padding: 10px; font-size: 15px; }
+  body.menu-open .layers { flex-direction: column; align-items: flex-start; padding: 8px 10px; }
+  #imagery { flex-basis: 100%; padding: 8px; border-left: 0; border-top: 1px solid #ddd; }
+
+  /* panels become bottom sheets */
+  #panel, #path-panel, .side, .side.wide {
+    position: fixed; left: 0 !important; right: 0 !important; bottom: 0; top: auto !important; width: auto !important;
+    max-height: 64vh !important; border-radius: 14px 14px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,.25); z-index: 5; padding: 10px 12px 14px; }
+  #panel::before, #path-panel::before, .side::before { content: ''; display: block; width: 40px; height: 4px; border-radius: 2px; background: #cfd4d8; margin: 0 auto 6px; }
+  #playback { left: 0; right: 0; bottom: 0; transform: none; width: auto; border-radius: 14px 14px 0 0; max-height: 58vh; overflow-y: auto; z-index: 4; }
+  #metrics { grid-template-columns: 1fr 1fr; }
+  .playback-row { gap: 6px; }
+  #minute { min-width: 0; }
+  #guide { left: 8px; right: 8px; width: auto; bottom: 8px; }
+  #hint { left: 8px; right: 8px; transform: none; max-width: none; }
+  .maplibregl-ctrl-top-right { top: 0; }
+  .maplibregl-ctrl-bottom-left { display: none; } /* scale bar hides behind the sheets */
+
+  /* input table: slightly tighter, and 16 px fields so phones do not zoom in on tap */
+  .x-row { grid-template-columns: 50px 1fr 84px 58px; font-size: 12.5px; }
+  #panel input, #panel select, .side input, .side select, #path-panel input, #path-panel select { font-size: 16px !important; }
+  .wb-body { grid-template-columns: 96px 1fr; }
+  #wind-dial { width: 96px; height: 96px; }
+  button.fire.big { padding: 12px; font-size: 16px; }
+}
+@media (max-width: 700px) {
+  #toolbar > #menu-btn { background: #2d3436; color: #fff; border-radius: 6px; font-weight: 600; }
+  #guide { bottom: 44px; }
+  #panel, #path-panel, .side, #playback { background: #fff; }
+}
+@media (min-width: 701px) and (max-width: 1024px) {
+  #panel { width: 370px; }
+  .x-row { grid-template-columns: 52px 1fr 76px 64px; }
+}

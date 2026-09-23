@@ -263,8 +263,12 @@ function placeInfo() {
     infoAnchor = document.querySelector(`[data-info="${infoAnchor.dataset.info}"]`);
     if (!infoAnchor) { hideInfo(); return; }
   }
-  const a = infoAnchor.getBoundingClientRect(), w = infoCard.offsetWidth, h = infoCard.offsetHeight;
   const panel = infoAnchor.closest('#panel');
+  // Phones, or tablets without room beside the form: show the card as a sheet under the toolbar
+  const sheet = window.innerWidth <= 700 || (panel && window.innerWidth - panel.getBoundingClientRect().right < 340);
+  infoCard.classList.toggle('sheet', sheet);
+  if (sheet) { infoCard.style.left = infoCard.style.top = ''; infoLine.hidden = true; return; }
+  const a = infoAnchor.getBoundingClientRect(), w = infoCard.offsetWidth, h = infoCard.offsetHeight;
   if (panel) {
     // beside the form, joined to the field by a line
     const p = panel.getBoundingClientRect(), mid = a.top + Math.min(a.height, 40) / 2, left = p.right + 36;
@@ -281,6 +285,7 @@ function placeInfo() {
   }
 }
 function hideInfo() { infoAnchor = null; infoCard.hidden = infoLine.hidden = true; }
+infoCard.addEventListener('click', () => { if (infoCard.classList.contains('sheet')) hideInfo(); }); // tap to close on phones
 
 const helpZone = el => el?.closest?.('#panel, #playback');
 document.addEventListener('mouseover', e => {

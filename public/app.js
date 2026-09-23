@@ -38,6 +38,18 @@ map.addControl(new maplibregl.ScaleControl());
 const toolbarEl = document.querySelector('#toolbar');
 new ResizeObserver(() => document.documentElement.style.setProperty('--toolbar-bottom', `${toolbarEl.getBoundingClientRect().bottom}px`)).observe(toolbarEl);
 
+// Small screens: the toolbar folds into a menu; using a tool closes it again
+const menuBtn = document.querySelector('#menu-btn');
+menuBtn.addEventListener('click', () => {
+  const open = document.body.classList.toggle('menu-open');
+  menuBtn.setAttribute('aria-expanded', String(open));
+  menuBtn.textContent = open ? '✕ Close' : '☰ Menu';
+});
+toolbarEl.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (b && b !== menuBtn && document.body.classList.contains('menu-open')) menuBtn.click();
+});
+
 const EDIT_HINT = 'Drag a yellow corner to move it. Drag a white dot to add a corner. Click a corner, then press Delete to remove it. Drag inside the shape to move the whole building.';
 const $ = s => document.querySelector(s);
 const ui = {

@@ -31,7 +31,7 @@ function loadScenario() {
     s = {custom: {Hr: s.humidity, Ta: s.temp_c, Tw: s.wind_dir, Uw: Math.round(s.wind_spd / 3.6 * 10) / 10}, seed: s.seed, minutes: s.minutes};
   }
   const weather = Object.fromEntries(P.INPUTS.filter(v => v.scope === 'weather').map(v => [v.key, v.def]));
-  return {source: 'custom', seed: 42, repeats: 3, minutes: 60, speed: '0.5', boundaryOnly: false, ...s,
+  return {source: 'custom', weatherOverride: false, seed: 42, repeats: 3, minutes: 60, speed: '0.5', boundaryOnly: false, ...s,
     custom: {...weather, ...s.custom}, trials: {...draftTrials(), ...s.trials}};
 }
 const scenario = loadScenario();
@@ -118,7 +118,7 @@ const num = v => (typeof v === 'number' ? v : '');
 function inputRow(v, value, placeholder, note) {
   const weather = v.scope === 'weather';
   return `<label class="x-row${weather ? ' weather' : ''}" data-key="${v.key}" data-info="${v.key}">` +
-    `<span class="x-sym">${v.sym.replace(/ \((X\d)\)/, ' <i>$1</i>')}</span>` +
+    `<span class="x-sym">${v.sym}</span>` +
     `<span class="x-name">${v.name} <span class="x-i" aria-hidden="true">ⓘ</span>${weather ? ' <em>whole fire</em>' : ''}${note ? `<small>${note}</small>` : ''}</span>` +
     `<input id="x-${v.key}" type="number" min="${v.min}" max="${v.max}" step="${v.step}" value="${num(value)}" placeholder="${placeholder}">` +
     `<span class="x-unit">${v.unit.split(' (')[0].replace('count in this structure', 'count')}</span></label>`;
@@ -129,8 +129,9 @@ function renderInputs(f) {
   fui.source.value = scenario.source;
   fui.trialText.textContent = trial
     ? `Trial ${scenario.source} conditions (paper Table 1): ${trial.text} These nine values are used for every building in the run. Draft numbers: the paper gives none${cloud.enabled ? '. Shared by the class.' : '.'} The severity is not set here: the simulation works it out.`
-    : 'X1, X2, X3, X6 and X7 belong to this building. X4, X5, X8 and X9 are the weather for the whole fire.';
-  const values = trial ? scenario.trials[scenario.source] : {...Object.fromEntries(BUILDING_FIELDS.map(v => [v.key, p[v.key]])), ...scenario.custom};
+    : 'Db, Mb, O₂, Nh and Wr belong to this building. Hr, Ta, Uw and Θw are the weather for the whole fire.';
+  if (trial && scenario.weatherOverride) fui.trialText.textContent = `Trial ${scenario.source} building inputs with custom weather on this device. This is an exploration, not the original trial conditions.`;
+  const values = trial ? buildingPaperValues(f) : {...Object.fromEntries(BUILDING_FIELDS.map(v => [v.key, p[v.key]])), ...scenario.custom};
   const signature = `${p.id}|${scenario.source}|${canEdit()}`;
   const rows = P.INPUTS.map(v => ({v,
     placeholder: v.auto ? local.Db.toFixed(4) : (trial ? '' : String(v.def)),
@@ -151,7 +152,7 @@ function renderInputs(f) {
   // Who may change what: building values and class trial values need an editor; custom weather is this device only
   fui.xInputs.querySelectorAll('input').forEach(el => {
     const scope = P.BY_KEY[el.id.slice(2)].scope;
-    el.disabled = trial ? (cloud.enabled && !canEdit()) : scope === 'building' && !canEdit();
+    el.disabled = scope === 'weather' && (!trial || scenario.weatherOverride) ? false : trial ? (cloud.enabled && !canEdit()) : !canEdit();
   });
   renderWeather(values, trial);
   fui.resetTrial.hidden = !trial || (cloud.enabled && !canEdit());
@@ -168,18 +169,18 @@ function renderInputs(f) {
   ].filter(Boolean).join(' ');
 }
 
-fui.source.addEventListener('change', () => { scenario.source = fui.source.value; saveScenario(); renderScenario(); });
+fui.source.addEventListener('change', () => { scenario.source = fui.source.value; scenario.weatherOverride = false; saveScenario(); renderScenario(); });
 fui.xInputs.addEventListener('change', e => {
   const f = selected(), v = P.BY_KEY[e.target.id.slice(2)], trial = P.TRIALS[scenario.source];
   try {
-    if (trial) {
-      if (!requireEdit()) { updatePanel(); return; }
-      scenario.trials[scenario.source][v.key] = readField(v, e.target, v.auto);
-      saveScenario(); shareTrials();
-    } else if (v.scope === 'weather') {
+    if (v.scope === 'weather' && (!trial || scenario.weatherOverride)) {
       scenario.custom[v.key] = readField(v, e.target);
       scenario.custom.source = 'Weather edited by hand.';
       saveScenario();
+    } else if (trial) {
+      if (!requireEdit()) { updatePanel(); return; }
+      scenario.trials[scenario.source][v.key] = readField(v, e.target, v.auto);
+      saveScenario(); shareTrials();
     } else {
       if (!requireEdit()) { updatePanel(); return; }
       const value = e.target.value === '' ? null : readField(v, e.target);
@@ -196,10 +197,10 @@ fui.xInputs.addEventListener('change', e => {
 // Plain-language help for the controls that are not paper inputs (X1–X9 are in paper.js INFO, outputs in OUT_INFO)
 const HELP = {
   preset: {title: 'Preset',
-    what: 'Where the nine input values come from. Custom uses this building’s own values (X1, X2, X3, X6, X7) plus the weather. Trial A–D are the paper’s four experimental conditions (Table 1): the same nine values for every building.',
+    what: 'Where the nine input values come from. Custom uses this building’s own values (Db, Mb, O₂, Nh, Wr) plus the weather. Trial A–D are the paper’s four experimental conditions (Table 1): the same nine values for every building.',
     get: 'Use Custom to explore a real situation. For the paper’s experiments, pick each Trial and run it three times (Run settings), then compare the results in the Run log.',
     sim: 'Only changes which inputs go in. The fire severity is always worked out by the simulation: it is an output, never chosen here.'},
-  weather: {title: 'Wind & weather', sub: 'X4, X5, X8, X9',
+  weather: {title: 'Wind & weather', sub: 'Hr, Ta, Uw, Θw',
     what: 'The weather during the fire: humidity, temperature, wind speed and wind direction. It is the same for every building.',
     get: '“Use live forecast” loads the current conditions or any hour of the next two days for Sitio Polo (Open-Meteo). Or set the wind with the dial and slider, or type the values in the table.',
     sim: 'Dry, hot air makes buildings easier to ignite; the wind pushes the fire downwind and lets it jump wider gaps.'},
@@ -216,7 +217,7 @@ const HELP = {
     get: 'Use 60 for a first look. Try the time the fire truck needs to arrive to see what burns before help comes.',
     sim: 'The run stops earlier if the fire goes out. Total simulation time (Y8) can never be longer than this.'},
   evac: {title: 'Evacuation on foot',
-    what: 'Where the residents go. When the fire comes within 30 m of a building, or the building itself catches, its residents leave and walk to the nearest safe place: a safe area set by the class (Routes panel) or the main road, which the paper describes as cemented and passable. People per building = households (X6) × 5, the Baliwagan average (2026 census).',
+    what: 'Where the residents go. When the fire comes within 30 m of a building, or the building itself catches, its residents leave and walk to the nearest safe place: a safe area set by the class (Routes panel) or the main road, which the paper describes as cemented and passable. People per building = households (Nh) × 5, the Baliwagan average (2026 census).',
     get: 'White figures represent groups walking to safety. The counts include everyone, even when figures or labels overlap. These are not death counts. Solid green lines follow mapped roads and alleys; dashed house connections bend around mapped buildings and water. If a clear connection cannot be found, the group is marked Path unknown. Door locations and passage access still need field checking.',
     sim: 'Each family steps out of its door onto the nearest road or alley it can reach without crossing water or passing a burning house, then walks the network (roads plus the alleys from the GPS walks). They see where the fire is: streets beside burning buildings are closed, streets within 30 m of the fire are avoided, and every minute they check the way ahead — if the fire has blocked it, they turn back or take another street. It does not change the fire. Times assume people leave at once and walk at 4.5 km/h; no crowding, so real evacuations are slower.'},
   bfp: {title: 'BFP fire truck response (optional)',
@@ -391,14 +392,22 @@ function renderWeather(values, trial) {
   speed.value = Math.min(20, Uw);
   $('#wb-speed-val').textContent = `${Uw} m/s · ${windWords(Uw)}`;
   $('#wb-summary').innerHTML = `From <b>${dir(Tw)}</b> (${Tw}°) at <b>${Uw} m/s</b> (${(Uw * 3.6).toFixed(0)} km/h): the fire is pushed toward <b>${dir((Tw + 180) % 360)}</b>. Humidity ${values.Hr} %, ${values.Ta} °C.`;
-  const locked = trial ? (cloud.enabled && !canEdit()) : false;
+  const locked = trial && !scenario.weatherOverride ? (cloud.enabled && !canEdit()) : false;
   dial.classList.toggle('locked', locked);
   speed.disabled = locked;
-  fui.wxLoad.disabled = Boolean(trial);
-  fui.wxLoad.title = trial ? 'The Trial preset has its own weather. Switch Preset to Custom to use the live forecast.' : '';
-  fui.wxHour.hidden = Boolean(trial) || !forecast;
-  fui.wxStatus.textContent = trial ? `Trial ${scenario.source} sets its own weather. Switch Preset to Custom to use the live forecast.` : (scenario.custom.source ?? 'Weather entered by hand.');
+  fui.wxLoad.disabled = wxLoading;
+  fui.wxLoad.title = 'Use forecast weather on this device; saved trial values remain unchanged.';
+  $('#wx-custom-row').hidden = !trial;
+  $('#wx-custom').checked = scenario.weatherOverride;
+  fui.wxHour.hidden = (Boolean(trial) && !scenario.weatherOverride) || !forecast;
+  fui.wxHour.disabled = wxLoading;
+  fui.wxStatus.textContent = wxLoading ? 'Loading the Open-Meteo forecast…' : trial && !scenario.weatherOverride
+    ? `Using Trial ${scenario.source} weather. Live forecast or custom weather keeps the trial’s building inputs and changes weather only on this device.` : (scenario.custom.source ?? 'Weather entered by hand.');
 }
+$('#wx-custom').addEventListener('change', e => {
+  if (e.target.checked) Object.assign(scenario.custom, scenario.trials[scenario.source] && Object.fromEntries(P.INPUTS.filter(v=>v.scope==='weather').map(v=>[v.key,scenario.trials[scenario.source][v.key]])), {source:'Weather copied from trial; editable on this device.'});
+  scenario.weatherOverride = e.target.checked; saveScenario(); renderScenario();
+});
 
 // ---------- close, and the "How to run a fire" guide ----------
 const GUIDE_KEY = 'ignisshield-map3d.guide-hidden';
@@ -414,7 +423,11 @@ fui.panelClose.addEventListener('click', () => select(null));
 
 /** The nine paper inputs used for a building in the current scenario. */
 function buildingPaperValues(f) {
-  if (P.TRIALS[scenario.source]) return {...scenario.trials[scenario.source]};
+  if (P.TRIALS[scenario.source]) {
+    const values = {...scenario.trials[scenario.source]};
+    if (scenario.weatherOverride) for (const v of P.INPUTS.filter(v=>v.scope==='weather')) values[v.key] = scenario.custom[v.key];
+    return values;
+  }
   const p = f.properties, own = {};
   for (const v of BUILDING_FIELDS) own[v.key] = typeof p[v.key] === 'number' ? p[v.key] : (v.auto ? null : v.def);
   const {Hr, Ta, Uw, Tw} = scenario.custom;
@@ -446,7 +459,7 @@ function runBuildings() {
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 function updateWind() {
   // during playback, describe the wind the run on screen used
-  const w = run ? run.wind : P.TRIALS[scenario.source] ? scenario.trials[scenario.source] : scenario.custom;
+  const w = run ? run.wind : P.TRIALS[scenario.source] && !scenario.weatherOverride ? scenario.trials[scenario.source] : scenario.custom;
   fui.windArrow.style.transform = `rotate(${(w.Tw + 180 - map.getBearing()) % 360}deg)`; // arrow points where the wind blows TO
   fui.windArrow.hidden = w.Uw === 0;
   fui.windText.textContent = w.Uw === 0 ? 'Calm · 0 m/s' : `Wind from ${COMPASS[Math.round(w.Tw / 45) % 8]} (${w.Tw}°) → toward ${COMPASS[Math.round(((w.Tw + 180) % 360) / 45) % 8]} · ${w.Uw} m/s`;
@@ -537,6 +550,7 @@ function buildingSelectionLocked() { return fireStarting || run !== null; }
 let shown = null; // fire state currently drawn for each building
 let frameIndex = 0;
 let playTimer = null; // truthy while playing (route-ui checks it)
+let resultsDismissed = false, ignitionHold = 0, originMarker = null;
 // Choose the playback resolution once, avoiding framebuffer resizes during gestures.
 const STATE_NAMES = ['safe', 'burning', 'burned', 'extinguished'];
 
@@ -561,10 +575,10 @@ async function startFire() {
     const trial = P.TRIALS[scenario.source];
     const x = buildingPaperValues(origin), local = measuredDensity().get(origin.properties.id);
     const ids = features.map(f => f.properties.id);
-    const w = trial ? scenario.trials[scenario.source] : scenario.custom, wind = {Tw: w.Tw, Uw: w.Uw}; // smoke drifts downwind
+    const w = x, wind = {Tw: w.Tw, Uw: w.Uw}; // use the exact effective inputs, including custom weather
     const calculation = IgnisCalculationReport.capture(features, features.map(buildingPaperValues),
       features.map(f => measuredDensity().get(f.properties.id)), {utc, trial:trial?scenario.source:null,
-        weatherSource:scenario.custom.source, originIndex:index, maxMinutes:scenario.minutes,
+        weatherOverride:scenario.weatherOverride, weatherSource:scenario.custom.source, originIndex:index, maxMinutes:scenario.minutes,
         extent:scenario.boundaryOnly?'Study boundary only':'All mapped buildings', bfp:bfpSettings()});
     await activity.stage('Preparing roads and escape paths', 'Building the route network for evacuation and any enabled BFP response.');
     // Evacuation on foot for every run (same network and residents for the whole batch)
@@ -580,12 +594,12 @@ async function startFire() {
       sessionRuns.set(id, {id, result, features, ids, seed, wind, inputs, evac, bfp: timeline, noBfpIgnited, calculation});
       const out = P.outputs(result.metrics);
       records.push({
-        id, batch, utc, run_in_batch: k + 1, scenario: (trial ? `Trial ${runSettings.source} conditions` : 'Custom') + ' · surveyed routes',
+        id, batch, utc, run_in_batch: k + 1, scenario: (trial ? `Trial ${runSettings.source} ${runSettings.weatherOverride ? 'building inputs + custom weather' : 'conditions'}` : 'Custom') + ' · surveyed routes',
         ignition: origin.properties.id, seed, max_minutes: runSettings.minutes, n_buildings: features.length,
-        extent: runSettings.boundaryOnly ? 'study boundary' : 'all mapped buildings', inputs: trial ? 'trial values, all buildings' : 'per building + weather',
+        extent: runSettings.boundaryOnly ? 'study boundary' : 'all mapped buildings', inputs: trial ? (runSettings.weatherOverride ? 'trial building values + custom weather' : 'trial values, all buildings') : 'per building + weather',
         X1_Db: x.Db ?? `measured ${local.Db.toFixed(5)}`, X2_Mb_MJ_m2: x.Mb, X3_O2_ratio: x.O2, X4_Hr_pct: x.Hr, X5_Ta_C: x.Ta,
         X6_Nh: x.Nh, X7_Wr_m: x.Wr, X8_Uw_m_s: x.Uw, X9_Tw_deg: x.Tw,
-        weather_source: trial ? 'trial values' : (runSettings.custom.source ?? 'entered by hand'),
+        weather_source: trial && !runSettings.weatherOverride ? 'trial values' : (runSettings.custom.source ?? 'entered by hand'),
         Y1_Sf: out[0].value, level: P.level(out[0].value), Y2_If_kW_m: out[1].value, Y3_R_m_min: out[2].value, Y4_Q_MW: out[3].value,
         Y5_Ab_m2: out[4].value, Y6_phi_deg: out[5].value, Y7_tau_min: out[6].value, Y8_Tsim_min: out[7].value,
         evac_routing: evacCtx.routingMode,
@@ -629,6 +643,13 @@ function showRun(id) {
   activity.show(run);
   windFX.set(map, run.wind);
   prepareEffects(run);
+  const originIndex = run.result.frames[0].states.findIndex(s => s === 1);
+  if (originIndex >= 0) {
+    const badge = document.createElement('div');
+    badge.className = 'ignition-origin'; badge.textContent = 'Fire starts here';
+    originMarker = new maplibregl.Marker({element:badge,anchor:'bottom',offset:[0,-12],opacity:1,opacityWhenCovered:1}).setLngLat(shapeOf(originIndex).centre).addTo(map);
+  }
+  ignitionHold = 1.5;
   if (![...fui.batchRun.options].some(o => o.value === id)) {
     fui.batchRun.innerHTML = `<option value="${id}">Logged run · replay #${run.seed}</option>`;
   }
@@ -752,8 +773,8 @@ function showFrame(k) {
   fui.frame.value = k;
   showClock();
   fui.status.textContent = `${row.Burning} burning · ${row.Burned} burned${row.Extinguished ? ` · ${row.Extinguished} put out` : ''}${k === frames.length - 1 ? ` · ${run.result.status}` : ''}`;
-  if (k === frames.length - 1) setResults(true);
-  else if (!fui.results.hidden) setResults(false);
+  if (k < frames.length - 1) resultsDismissed = false;
+  setResults(k === frames.length - 1 && !resultsDismissed);
   activity.render(run, k);
   activity.status(displayMinute, Boolean(playTimer));
   paintFire();
@@ -782,7 +803,9 @@ function loop(ts) {
   if (playTimer) clock += Math.min(dt, 0.1);
   if (playTimer) {
     const end = run.result.frames.length - 1;
-    const next = IgnisPlayback.advance(displayMinute, dt, Number(fui.speed.value), end, playbackRendered);
+    const holding = ignitionHold > 0 && displayMinute === 0;
+    if (holding && playbackRendered) ignitionHold = Math.max(0, ignitionHold - dt);
+    const next = holding ? displayMinute : IgnisPlayback.advance(displayMinute, dt, Number(fui.speed.value), end, playbackRendered);
     if (next !== displayMinute) playbackRendered = false;
     displayMinute = next;
     const k = Math.floor(displayMinute);
@@ -814,7 +837,7 @@ function fireAffectedNow() {
 }
 
 function play() {
-  if (frameIndex >= run.result.frames.length - 1) { displayMinute = 0; showFrame(0); }
+  if (frameIndex >= run.result.frames.length - 1) { displayMinute = 0; ignitionHold = 1.5; showFrame(0); }
   playTimer = true;
   syncRenderResolution();
   fui.play.textContent = 'Pause';
@@ -827,6 +850,7 @@ function pause() {
   activity.status(displayMinute, false);
 }
 function clearFire() {
+  originMarker?.remove(); originMarker = null; resultsDismissed = false; ignitionHold = 0;
   activity.clear();
   windFX.clear();
   bfpShow(null);
@@ -849,16 +873,21 @@ function clearFire() {
 
 fui.ignite.addEventListener('click', startFire);
 fui.play.addEventListener('click', () => (playTimer ? pause() : play()));
-fui.restart.addEventListener('click', () => { setResults(false); displayMinute = 0; showFrame(0); play(); });
+fui.restart.addEventListener('click', () => { displayMinute = 0; ignitionHold = 1.5; showFrame(0); play(); });
 fui.skip.addEventListener('click', () => { pause(); displayMinute = run.result.frames.length - 1; showFrame(displayMinute); });
 /** Results (severity headline and Y1–Y8) are shown only once the simulated fire has finished. */
 function setResults(show) {
+  const opening = show && fui.results.hidden;
   fui.results.hidden = !show;
   $('#view-calculations').disabled = !run?.calculation;
-  fui.runningNote.hidden = show;
-  if (show) { fui.results.classList.remove('reveal'); void fui.results.offsetWidth; fui.results.classList.add('reveal'); }
+  const ended = run && frameIndex === run.result.frames.length - 1;
+  fui.runningNote.hidden = Boolean(ended);
+  $('#results-closed').hidden = !ended || show;
+  if (opening) { fui.results.classList.remove('reveal'); void fui.results.offsetWidth; fui.results.classList.add('reveal'); }
   else if (infoAnchor?.closest?.('#results')) hideInfo();
 }
+$('#results-close').addEventListener('click', () => { resultsDismissed = true; setResults(false); });
+$('#results-reopen').addEventListener('click', () => { resultsDismissed = false; setResults(true); });
 fui.frame.addEventListener('input', () => { pause(); displayMinute = Number(fui.frame.value); showFrame(displayMinute); });
 fui.clearFire.addEventListener('click', clearFire);
 const calculationDialog = $('#calculation-dialog'), calculationFrame = $('#calculation-frame');
@@ -887,13 +916,18 @@ fui.speed.addEventListener('change', () => { scenario.speed = fui.speed.value; s
 const WX_URL = 'https://api.open-meteo.com/v1/forecast?latitude=10.5068&longitude=123.7141&timezone=Asia%2FManila&forecast_days=3&wind_speed_unit=ms'
   + '&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m'
   + '&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m';
-let forecast = null;
+let forecast = null, wxLoading = false;
 
 async function loadWeather() {
+  if (wxLoading) return;
+  wxLoading = true;
+  fui.source.disabled = true;
+  fui.wxHour.disabled = true;
+  $('#wx-custom').disabled = true;
   fui.wxLoad.disabled = true;
   fui.wxStatus.textContent = 'Loading the Open-Meteo forecast…';
   try {
-    const res = await fetch(WX_URL);
+    const res = await fetch(WX_URL, {signal: AbortSignal.timeout(15000)});
     if (!res.ok) throw new Error(`Open-Meteo answered ${res.status}`);
     const j = await res.json(), c = j.current, h = j.hourly;
     forecast = [{time: c.time, label: `Now (${c.time.slice(11)})`, t: c.temperature_2m, rh: c.relative_humidity_2m,
@@ -911,13 +945,19 @@ async function loadWeather() {
   } catch (err) {
     fui.wxStatus.textContent = `Could not load live weather (${err.message}). Check the internet connection, or enter the weather by hand.`;
   } finally {
+    wxLoading = false;
     fui.wxLoad.disabled = false;
+    fui.source.disabled = false;
+    fui.wxHour.disabled = false;
+    $('#wx-custom').disabled = false;
+    if (fui.wxStatus.textContent.startsWith('Loading')) fui.wxStatus.textContent = scenario.custom.source;
   }
 }
 function applyWeather(i) {
   const f = forecast[i];
   const values = {Hr: Math.round(f.rh), Ta: Math.round(f.t * 10) / 10, Uw: Math.round(f.ws * 10) / 10, Tw: Math.round(f.wd) % 360};
   for (const [k, v] of Object.entries(values)) P.check(k, v);
+  if (P.TRIALS[scenario.source]) scenario.weatherOverride = true;
   Object.assign(scenario.custom, values, {source: `Open-Meteo ${i === 0 ? 'current conditions' : 'forecast'} for ${f.time.replace('T', ' ')} Philippine time; gusts ${f.gust.toFixed(1)} m/s. Weather data by Open-Meteo.com (CC BY 4.0).`});
   saveScenario();
   renderScenario();

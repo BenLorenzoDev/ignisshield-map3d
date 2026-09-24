@@ -42,5 +42,9 @@ for(const mode of ['baseline','mixed','bfp','no-spread']) {
 const snapshot=C.capture([{properties:{id:'example',Mb:600}}],[{...P.DEFAULTS,Db:0.00106,Mb:600}],[{Db:0.02,meanArea:121.56}],{trial:null});
 assert.match(snapshot.buildings[0].sources.Mb,/verification not recorded/);
 assert.match(snapshot.buildings[0].sources.O2,/Default assumption/);
+const customWeather=C.capture([{properties:{id:'weather-test'}}],[{...P.DEFAULTS,Mb:600,Hr:71}],locals.slice(0,1),
+  {trial:'A',weatherOverride:true,weatherSource:'Open-Meteo test forecast'});
+assert.equal(customWeather.buildings[0].sources.Mb,'Trial A assumption');
+assert.equal(customWeather.buildings[0].sources.Hr,'Open-Meteo test forecast','custom weather must not be reported as the original trial');
 assert.throws(()=>C.derive({}),/older run/);
 console.log(`Calculation report: ${checked} output comparisons passed, including mixed inputs, BFP, no spread, student heat example, snapshot isolation and escaped standalone HTML.`);

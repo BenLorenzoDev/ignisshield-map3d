@@ -11,6 +11,8 @@ let evacLastPeople = '';
 let evacRepresentatives = null, evacLastSelection = -Infinity, evacSelectionCamera = '';
 let evacMarkerKeys = {};
 let evacActors = null;
+let evacDestinations = [];
+const destinationBar = $('#evac-destinations');
 let waterPolys = [];       // sea, river and ponds (OpenStreetMap): nobody walks across them
 let evacLoading = Promise.resolve();
 const routingReview = $('#evac-routing-review');
@@ -43,6 +45,13 @@ async function initEvac() {
     paint: {'line-color': '#00ff88', 'line-width': ['interpolate', ['linear'], ['zoom'], 15, 1, 19, 1.5, 22, 2],
       'line-opacity': 0.9, 'line-dasharray': [2, 2.5]}}, 'evac-routes');
   evacActors = IgnisWalkers.create(map, personImages());
+  map.addSource('evac-destinations', {type:'geojson', data:empty()});
+  map.addLayer({id:'evac-destinations', type:'circle', source:'evac-destinations',
+    paint:{'circle-radius':8, 'circle-color':'#087a49', 'circle-stroke-color':'#fff', 'circle-stroke-width':3}});
+  map.addLayer({id:'evac-destination-labels', type:'symbol', source:'evac-destinations',
+    layout:{'text-field':['get','label'], 'text-font':['Noto Sans Bold'], 'text-size':12,
+      'text-offset':[0,1.2], 'text-anchor':'top', 'text-padding':8},
+    paint:{'text-color':'#075c39', 'text-halo-color':'#fff', 'text-halo-width':2}});
   // Say what each group means directly; viewers should not have to decode symbols.
   for (const [status, color, label] of [
     ['arrived', '#24643b', 'Reached safety'], ['trapped', '#785000', 'No safe route'], ['nopath', '#435361', 'Path unknown']
@@ -145,6 +154,15 @@ async function prepareEvac(features, inputs, households) {
 // ---------- playback ----------
 function evacShow(r) {
   evacShown = r?.evac ?? null;
+  evacDestinations = IgnisEvacDisplay.destinations(evacShown?.groups ?? []);
+  destinationBar.innerHTML = evacDestinations.length
+    ? '<b>Route destinations</b><button id="locate-evac-destinations" class="primary-soft">Locate exits ↗</button><span>Green circles mark the calculated destinations.</span>'
+    : '<span>No reachable destination was found for the affected groups.</span>';
+  destinationBar.querySelector('button')?.addEventListener('click', () => {
+    const bounds = new maplibregl.LngLatBounds();
+    evacDestinations.forEach(d => bounds.extend(d.at));
+    map.fitBounds(bounds, {padding:{top:110,right:60,bottom:Math.min(320,map.getContainer().clientHeight*.4),left:60},maxZoom:18,duration:700});
+  });
   evacActors?.setRun(evacShown?.groups ?? []);
   evacLastRoutes = -1;
   evacLastMarkers = evacLastCounts = evacLastView = '';
@@ -212,6 +230,15 @@ for (const [el, pose, state] of [['moving', 'runA', 'moving']]) {
 /** Called every animation update with the playback minute (fire-ui loop). */
 function evacTick(minute) {
   const on = eui.toggle.checked && evacShown;
+  destinationBar.hidden = !on;
+  if (map.getLayer('evac-destinations')) {
+    const visibility = on ? 'visible' : 'none';
+    if (map.getLayoutProperty('evac-destinations', 'visibility') !== visibility) {
+      map.setLayoutProperty('evac-destinations', 'visibility', visibility);
+      map.setLayoutProperty('evac-destination-labels', 'visibility', visibility);
+    }
+  }
+  if (evacLastRoutes === -1) map.getSource('evac-destinations')?.setData({type:'FeatureCollection',features:evacDestinations.map(d=>({type:'Feature',geometry:{type:'Point',coordinates:d.at},properties:{label:d.label}}))});
   if (!on) {
     if (evacLastRoutes !== -2) {
       for (const source of ['evac-routes', 'evac-arrived', 'evac-trapped', 'evac-nopath']) map.getSource(source)?.setData(empty());
@@ -279,7 +306,7 @@ function evacTick(minute) {
       <span class="ev-safe">${counts.arrived.toLocaleString()} reached safety</span>
       <span class="ev-trapped">${counts.trapped.toLocaleString()} have no safe route</span>
       <span>${counts.nopath.toLocaleString()} have an unknown path</span>
-      <small>These are people, not death counts. “Path unknown” means the map has no usable connection for that group.</small>`;
+      <small>Each moving figure represents a group. Overlapping figures share an icon; counts include everyone. Crowd collisions are not simulated. “Path unknown” means no usable mapped connection.</small>`;
   }
   const m = Math.floor(minute);
   const routeView = activeRoutes.map(g => g.i).join(',');

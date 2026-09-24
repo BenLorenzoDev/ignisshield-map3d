@@ -359,3 +359,11 @@ button.fire.big { padding: 10px; font-size: 15px; }
   #activity { position: fixed; left: 8px; right: 8px; width: auto; padding: 12px;
     max-height: max(120px, calc(100dvh - var(--toolbar-bottom, 52px) - var(--activity-playback-height, 180px) - 48px)); }
 }
+
+/* Keep the origin and exits readable without adding labels to every building. */
+.ignition-origin { pointer-events:none; color:#802600; background:#fff4de; border:2px solid #bf4800; border-radius:5px; padding:4px 7px; font-size:12px; font-weight:700; box-shadow:0 1px 4px #0003; }
+.results-toolbar { justify-content:space-between; }
+#results-close { border:1px solid #68777c; font-weight:600; }
+#evac-destinations { color:#075c39; gap:8px; }
+#evac-destinations span { color:#435361; }
+#results-closed { justify-content:space-between; font-size:12px; }

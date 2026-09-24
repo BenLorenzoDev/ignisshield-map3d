@@ -23,7 +23,7 @@ const activity = (() => {
     const distance = e.gap < 0.1 ? 'touching footprints' : `${e.gap.toFixed(1)} m away`;
     const wind = v.wind_spd === 0 ? 'Calm wind.' : e.windFactor > 1.05 ? 'Wind increased exposure.' :
       e.windFactor < 0.95 ? 'Wind reduced exposure.' : 'Little wind effect.';
-    return `Strongest exposure: <b>${name(e.sourceId)}</b>, ${distance}. <span class="activity-wind">${wind}</span>` +
+    return `Strongest exposure: <b>${name(e.sourceId)}</b>, ${distance}. Ignition chance this step: <b>${pct(e.probability)}</b>. <span class="activity-wind">${wind}</span>` +
       (e.protection < 1 ? ' BFP wetting reduced the ignition chance.' : '');
   }
 
@@ -96,7 +96,7 @@ const activity = (() => {
     <p class="activity-next-brief">${risk ? `<b>Watch next:</b> ${name(risk.id)} · <strong>${esc(pct(risk.probability))}</strong> chance <em>Possible, not certain.</em>` :
       next ? 'No other buildings are exposed this step.' : `<b>Run ended.</b> ${row.Burning ? 'Time limit reached; some buildings are still burning.' : 'No buildings remain burning.'}`}</p>
     ${history.length ? `<section class="activity-history"><h3>Earlier</h3><ol>${history.join('')}</ol></section>` : ''}
-    <p class="activity-footnote">Amber links show model exposure, not flying embers.</p>`;
+    <p class="activity-footnote">The model uses ignition chances, not nearest-house order. A farther house can ignite while a nearer one does not. Amber links show calculated exposure; ember flight is not simulated.</p>`;
     panel.scrollTop = 0; // each new playback step starts with the latest update in view
   }
 

@@ -61,17 +61,38 @@ const IgnisWalkers = (() => {
         const active = gl.getParameter(gl.ACTIVE_TEXTURE);
         gl.activeTexture(gl.TEXTURE0); const saved0 = gl.getParameter(gl.TEXTURE_BINDING_2D); gl.bindTexture(gl.TEXTURE_2D, atlas);
         gl.activeTexture(gl.TEXTURE1); const saved1 = gl.getParameter(gl.TEXTURE_BINDING_2D); gl.bindTexture(gl.TEXTURE_2D, visibility);
-        if (visibilityDirty) { gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,groupWidth,1,0,gl.RGBA,gl.UNSIGNED_BYTE,visiblePixels); visibilityDirty=false; }
         gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
         if (dataDirty) { gl.bufferData(gl.ARRAY_BUFFER,vertexData,gl.DYNAMIC_DRAW); dataDirty=false; }
         const m = options.defaultProjectionData.mainMatrix;
         for (let i=0;i<12;i++) matrix[i]=m[i];
         for (let r=0;r<4;r++) matrix[12+r]=m[r]*ref[0]+m[4+r]*ref[1]+m[8+r]*ref[2]+m[12+r];
+        // Recheck actual projected positions every rendered frame, including camera motion.
+        // Coincident groups share a representative icon; never move them off their route.
+        const height = Math.max(8,Math.min(24,10+(map.getZoom()-16)*3));
+        const points = [], canvas = map.getCanvas();
+        for (const id of visibleIds) {
+          const route = routes.get(id); if (!route) continue;
+          let lo=1, hi=route.times.length;
+          while(lo<hi){const mid=(lo+hi)>>>1;if(route.times[mid]<=minute)lo=mid+1;else hi=mid;}
+          const offset=route.segments[lo];
+          if(offset===undefined || offset<0 || minute<routeData[offset+6])continue;
+          const t0=routeData[offset+6], t1=routeData[offset+7];
+          const f=Math.max(0,Math.min(1,(minute-t0)/(t1-t0)));
+          const p=[0,1,2].map(k=>routeData[offset+k]+(routeData[offset+3+k]-routeData[offset+k])*f);
+          const w=matrix[3]*p[0]+matrix[7]*p[1]+matrix[11]*p[2]+matrix[15];
+          if(w<=0)continue;
+          const x=((matrix[0]*p[0]+matrix[4]*p[1]+matrix[8]*p[2]+matrix[12])/w+1)*canvas.clientWidth/2;
+          const y=(1-(matrix[1]*p[0]+matrix[5]*p[1]+matrix[9]*p[2]+matrix[13])/w)*canvas.clientHeight/2;
+          points.push({id,x,y});
+        }
+        const kept = new Set(IgnisEvacDisplay.separate(points,height+4));
+        for(const id of visibleIds){const value=kept.has(id)?255:0;if(visiblePixels[id*4]!==value){visiblePixels[id*4]=value;visibilityDirty=true;}}
+        if (visibilityDirty) { gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,groupWidth,1,0,gl.RGBA,gl.UNSIGNED_BYTE,visiblePixels); visibilityDirty=false; }
         gl.useProgram(program); gl.uniformMatrix4fv(locations.matrix,false,matrix);
         gl.uniform2f(locations.viewport,gl.drawingBufferWidth,gl.drawingBufferHeight);
         gl.uniform1f(locations.minute,minute);gl.uniform1f(locations.seconds,seconds);gl.uniform1f(locations.groups,groupWidth);
         const pixelRatio=gl.drawingBufferWidth/map.getCanvas().clientWidth;
-        gl.uniform1f(locations.height,Math.max(8,Math.min(24,10+(map.getZoom()-16)*3))*pixelRatio);
+        gl.uniform1f(locations.height,height*pixelRatio);
         gl.uniform1i(locations.atlas,0);gl.uniform1i(locations.visible,1);
         let offset=0; const enabled=[];
         for (const [name,size] of [['start',3],['end',3],['times',2],['corner',2],['group',1]]) {

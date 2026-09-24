@@ -12,6 +12,7 @@
     return structuredClone({...meta, buildings: features.map((f, i) => ({id:f.properties.id,
       paper:paper[i], local:local[i], sources:Object.fromEntries(P.INPUTS.map(v => [v.key,
         v.key === 'Db' && paper[i].Db == null ? 'Measured from mapped footprints'
+          : v.scope === 'weather' && meta.weatherOverride ? (meta.weatherSource || 'Custom weather on this device')
           : meta.trial ? `Trial ${meta.trial} assumption`
           : v.scope === 'weather' ? (meta.weatherSource || 'Scenario weather')
           : typeof f.properties[v.key] === 'number' ? 'Entered value; field verification not recorded' : 'Default assumption']))}))});
@@ -113,7 +114,7 @@
       @media print{@page{size:A4;margin:12mm}body{background:white;font-size:10pt}main{max-width:none;margin:0;padding:0}.no-print{display:none!important}h2{break-after:avoid}.table-wrap{overflow:visible}table{font-size:7pt;table-layout:fixed;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}details{border:0;padding:0}.calculation{break-inside:auto}.answer{break-before:avoid}}
       </style></head><body><main><div class="eyebrow">IgnisShield · calculation record</div><h1>How this run’s results were calculated</h1>
       <p>Saved run <b>${esc(run.id)}</b> · ${esc(meta.utc)} · model ${esc(run.result.model)}</p>
-      <div class="meta"><span>${esc(meta.trial?`Trial ${meta.trial}`:'Custom inputs')}</span><span>Replay #${esc(run.seed)}</span><span>${d.rows.length} included buildings</span><span>Origin: Building ${o.i+1}</span><span>${esc(meta.extent)}</span><span>BFP ${run.bfp?'on':'off'}</span></div>
+      <div class="meta"><span>${esc(meta.trial?`Trial ${meta.trial}${meta.weatherOverride ? " building inputs + custom weather" : ""}`:'Custom inputs')}</span><span>Replay #${esc(run.seed)}</span><span>${d.rows.length} included buildings</span><span>Origin: Building ${o.i+1}</span><span>${esc(meta.extent)}</span><span>BFP ${run.bfp?'on':'off'}</span></div>
       <p>Routing: ${esc(run.evac?.preview?'Surveyed alleys with obstacle avoidance':'Original straight-connection assumptions')}. The routing mode does not change the fire equations.</p>
       ${run.bfp&&meta.bfp?`<p>BFP: ${n(meta.bfp.truckCount??1)} trucks; call after ${n(meta.bfp.callMin)} min; crew turnout ${n(meta.bfp.turnoutMin)} min; speed ${n(meta.bfp.speedKmh)} km/h; hose reach ${n(meta.bfp.reachM)} m; capacity ${n(meta.bfp.perMin)} buildings per truck per minute; standoff ${n(meta.bfp.standoffM)} m; wetting multiplies ignition hazard by ${n(meta.bfp.wetFactor)}.</p>`:''}
       ${(run.bfp?.truckCount??1)>1?'<p>Fleet assumptions: six-second departure spacing and separate stand-by positions at least 8 m apart. Each building is assigned to one spraying truck per minute; overlapping wetting does not compound. This extension changes the optional response, not the reviewed fire equations. Traffic queues, finite water supplies and crew limits are not simulated.</p>':''}

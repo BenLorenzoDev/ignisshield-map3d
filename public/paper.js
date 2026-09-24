@@ -7,18 +7,18 @@
 
   // X1..X9 in the paper's order. scope: 'building' = per structure, 'weather' = whole scenario.
   const INPUTS = [
-    {key: 'Db', sym: 'Db (X1)', name: 'Building density', unit: 'structures/m²', scope: 'building', min: 0, max: 0.1, step: 0.0001, auto: true,
+    {key: 'Db', sym: 'Db', name: 'Building density', unit: 'structures/m²', scope: 'building', min: 0, max: 0.1, step: 0.0001, auto: true,
       help: 'Blank = measured from the map: structures whose centre is within 30 m, per m².'},
-    {key: 'Mb', sym: 'Mb (X2)', name: 'Fuel load density', unit: 'MJ/m²', scope: 'building', min: 0, max: 5000, step: 10, def: 900,
+    {key: 'Mb', sym: 'Mb', name: 'Fuel load density', unit: 'MJ/m²', scope: 'building', min: 0, max: 5000, step: 10, def: 900,
       help: 'Burnable energy per m² of floor, including light walls and roof (wood ≈ 17.5 MJ/kg).'},
-    {key: 'O2', sym: 'O₂ (X3)', name: 'Oxygen availability', unit: 'ratio φO₂', scope: 'building', min: 0.1, max: 2, step: 0.05, def: 1,
+    {key: 'O2', sym: 'O₂', name: 'Oxygen availability', unit: 'ratio φO₂', scope: 'building', min: 0.1, max: 2, step: 0.05, def: 1,
       help: '1 = normal open air (20.9 % O₂). Below 1 = enclosed / poorly ventilated; above 1 = extra airflow.'},
-    {key: 'Hr', sym: 'Hr (X4)', name: 'Relative humidity', unit: '%', scope: 'weather', min: 0, max: 100, step: 1, def: 70},
-    {key: 'Ta', sym: 'Ta (X5)', name: 'Ambient temperature', unit: '°C', scope: 'weather', min: -10, max: 60, step: 0.1, def: 30},
-    {key: 'Nh', sym: 'Nh (X6)', name: 'Number of houses', unit: 'count in this structure', scope: 'building', min: 1, max: 1000, step: 1, def: 1},
-    {key: 'Wr', sym: 'Wr (X7)', name: 'Alley/road width', unit: 'm', scope: 'building', min: 0.1, max: 50, step: 0.1, def: 3},
-    {key: 'Uw', sym: 'Uw (X8)', name: 'Wind speed', unit: 'm/s', scope: 'weather', min: 0, max: 41.6, step: 0.1, def: 4.2},
-    {key: 'Tw', sym: 'Θw (X9)', name: 'Wind direction', unit: '° (blowing FROM, N = 0)', scope: 'weather', min: 0, max: 360, step: 1, def: 45}
+    {key: 'Hr', sym: 'Hr', name: 'Relative humidity', unit: '%', scope: 'weather', min: 0, max: 100, step: 1, def: 70},
+    {key: 'Ta', sym: 'Ta', name: 'Ambient temperature', unit: '°C', scope: 'weather', min: -10, max: 60, step: 0.1, def: 30},
+    {key: 'Nh', sym: 'Nh', name: 'Number of houses', unit: 'count in this structure', scope: 'building', min: 1, max: 1000, step: 1, def: 1},
+    {key: 'Wr', sym: 'Wr', name: 'Alley/road width', unit: 'm', scope: 'building', min: 0.1, max: 50, step: 0.1, def: 3},
+    {key: 'Uw', sym: 'Uw', name: 'Wind speed', unit: 'm/s', scope: 'weather', min: 0, max: 41.6, step: 0.1, def: 4.2},
+    {key: 'Tw', sym: 'Θw', name: 'Wind direction', unit: '° (blowing FROM, N = 0)', scope: 'weather', min: 0, max: 360, step: 1, def: 45}
   ];
   const BY_KEY = Object.fromEntries(INPUTS.map(v => [v.key, v]));
   const DEFAULTS = Object.fromEntries(INPUTS.filter(v => 'def' in v).map(v => [v.key, v.def]));

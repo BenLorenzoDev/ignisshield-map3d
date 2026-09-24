@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>IgnisShield Map 3D</title>
   <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
-  <link rel="stylesheet" href="styles.css?v=20260924-lowpower1">
+  <link rel="stylesheet" href="styles.css?v=20260924-students1">
 </head>
 <body class="loading">
   <div id="map"></div>
@@ -50,7 +50,7 @@
     <div id="panel-source" class="muted small"></div>
 
     <section class="step">
-      <h3><span class="num">1</span> Fire inputs <span class="muted small">paper X1–X9</span></h3>
+      <h3><span class="num">1</span> Fire inputs <span class="muted small">nine model inputs</span></h3>
       <label class="field" data-info="preset"><span>Preset <span class="x-i">ⓘ</span></span>
         <select id="scenario-source">
           <option value="custom">Custom: the values below</option>
@@ -65,7 +65,7 @@
         <strong id="material-current"></strong>
         <p id="material-source"></p>
         <details><summary>How to set concrete, mixed or plywood</summary>
-          <p>Choose <b>Custom</b> to use each building’s inputs, then edit <b>Fuel load density (Mb / X2)</b> below. Editing shared building values requires an editor account. Trial presets apply their own values to every building.</p>
+          <p>Choose <b>Custom</b> to use each building’s inputs, then edit <b>Fuel load density (Mb)</b> below. Editing shared building values requires an editor account. Trial presets apply their own values to every building.</p>
           <table><thead><tr><th>Model class</th><th>Fuel load (MJ/m²)</th><th>Factor</th></tr></thead><tbody>
             <tr><td>1 · Concrete / lower fuel</td><td>Below 700</td><td>0.35</td></tr>
             <tr><td>2 · Mixed / medium fuel</td><td>700 to below 1,100</td><td>0.85</td></tr>
@@ -76,7 +76,7 @@
       </div>
       <div id="x-inputs" class="x-table"></div>
       <div id="weather-block" class="live" data-info="weather">
-        <div class="wb-head"><b>Wind &amp; weather</b> <span class="muted small">sets X4, X5, X8, X9 for the whole fire</span></div>
+        <div class="wb-head"><b>Wind &amp; weather</b> <span class="muted small">Hr, Ta, Uw, Θw · whole fire</span></div>
         <div class="wb-body">
           <svg id="wind-dial" viewBox="-62 -62 124 124" role="slider" aria-label="Wind direction: click where the wind comes from" data-info="Tw" tabindex="0">
             <circle r="52" class="dial-ring"/>
@@ -95,6 +95,7 @@
           <button id="wx-load" class="primary-soft">Use live forecast</button>
           <select id="wx-hour" aria-label="Forecast hour" hidden></select>
         </div>
+        <label id="wx-custom-row" class="check small" hidden><input id="wx-custom" type="checkbox"> Custom weather on this device (keep trial building inputs)</label>
         <div id="wx-status" class="muted small"></div>
       </div>
       <button id="reset-trial" class="soft" hidden>Reset this trial to the draft values</button>
@@ -189,7 +190,7 @@
     <div class="panel-head"><strong>How to run a fire</strong><button id="guide-hide" class="icon" aria-label="Hide" title="Hide">×</button></div>
     <ol>
       <li><b>Click any building</b> on the map.</li>
-      <li>Check its <b>nine inputs (X1–X9)</b>, or pick a <b>Trial</b> preset.</li>
+      <li>Check its <b>nine inputs</b>, or pick a <b>Trial</b> preset.</li>
       <li>Press <b>Start fire here</b>. Watch it spread; the <b>outputs (Y1–Y8)</b> appear at the bottom.</li>
     </ol>
     <div class="muted small">Missing houses: <b>Satellite</b> → <b>Trace building</b>. Alleys: <b>Draw path</b>. Escape routes: <b>Routes</b>. Past results: <b>Run log</b>.</div>
@@ -293,6 +294,7 @@
       <span id="run-status" class="muted"></span>
     </div>
     <div id="evac-live" hidden></div>
+    <div id="evac-destinations" class="row small" hidden></div>
     <details id="evac-routing-review" hidden></details>
     <div id="bfp-status" class="small" hidden></div>
     <div id="running-note" class="row">
@@ -300,7 +302,7 @@
       <button id="skip-results" class="soft">Skip to results</button>
     </div>
     <div id="results" hidden>
-      <button id="view-calculations" class="primary-soft">View calculations</button>
+      <div class="row results-toolbar"><button id="view-calculations" class="primary-soft">View calculations</button><button id="results-close" aria-label="Close results to inspect map">Close results ×</button></div>
       <div id="result-headline"></div>
       <div id="evac-summary" data-info="evac" hidden></div>
       <div id="bfp-summary" data-info="bfp" hidden></div>
@@ -310,6 +312,7 @@
         <ul id="output-notes" class="muted small"></ul>
       </details>
     </div>
+    <div id="results-closed" class="row" hidden><span>Run finished · Explore the affected buildings on the map.</span><button id="results-reopen" class="primary-soft">Show results</button></div>
   </div>
 
   <dialog id="calculation-dialog" aria-labelledby="calculation-title">
@@ -322,24 +325,25 @@
   <script src="config.js"></script>
   <script src="cloud.js"></script>
   <script src="fire.js?v=20260924-activity1"></script>
-  <script src="paper.js"></script>
-  <script src="calculation-report.js?v=20260924-routes1"></script>
+  <script src="paper.js?v=20260924-students1"></script>
+  <script src="calculation-report.js?v=20260924-students1"></script>
   <script src="routing.js"></script>
   <script src="evac.js?v=20260924-walkers1"></script>
   <script src="bfp.js?v=20260924-fleet2"></script>
   <script src="fire-gl.js?v=20260924-lowpower1"></script>
   <script src="route-window.js?v=20260924-lowpower1"></script>
-  <script src="walkers-gl.js?v=20260924-lowpower1"></script>
+  <script src="evac-display.js?v=20260924-students1"></script>
+  <script src="walkers-gl.js?v=20260924-students1"></script>
   <script src="wind-ui.js?v=20260924-lowpower1"></script>
   <script src="field.js"></script>
   <script src="performance.js?v=20260924-lowpower1"></script>
   <script src="app.js?v=20260924-lowpower1"></script>
   <script src="playback.js?v=20260924-playback1"></script>
-  <script src="fire-ui.js?v=20260924-routes1"></script>
-  <script src="activity-ui.js?v=20260924-locate1"></script>
+  <script src="fire-ui.js?v=20260924-students1"></script>
+  <script src="activity-ui.js?v=20260924-students1"></script>
   <script src="route-ui.js"></script>
   <script src="paths-ui.js?v=20260924-survey3"></script>
-  <script src="evac-ui.js?v=20260924-routes1"></script>
+  <script src="evac-ui.js?v=20260924-students1"></script>
   <script src="bfp-ui.js?v=20260924-fleet2"></script>
   <script src="performance-ui.js?v=20260924-lowpower1"></script>
   <script src="cloud-ui.js"></script>

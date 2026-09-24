@@ -13,6 +13,7 @@ const fireGL = (() => {
     attribute vec2 a_corner;   // x -1..1 across, y 0..1 up
     attribute vec4 a_data;     // height, hv width (mercator units), seed, ignition minute
     attribute float a_dur;     // burn duration (minutes)
+    attribute vec2 a_wind;     // flame-tip lean, mercator units
     varying vec2 v_uv;
     varying float v_seed;
     varying float v_int;
@@ -21,6 +22,7 @@ const fireGL = (() => {
       float life = lifecycle((u_minute - a_data.w) / a_dur);
       vec4 base = u_matrix * vec4(a_pos, 1.0);
       vec4 top = u_matrix * vec4(a_pos + vec3(0.0, 0.0, a_data.x * (0.5 + 0.5 * life)), 1.0);
+      vec4 bent = u_matrix * vec4(a_pos + vec3(a_wind * (0.5 + 0.5 * life), a_data.x * (0.5 + 0.5 * life)), 1.0);
       vec4 side = u_matrix * vec4(a_pos + vec3(a_data.y, 0.0, 0.0), 1.0);
       vec2 hv = u_viewport * 0.5;
       vec2 b = base.xy / base.w;
@@ -31,6 +33,8 @@ const fireGL = (() => {
       float minH = wpx * 2.4;                     // seen from above, keep a flame shape on screen
       if (hpx < minH) { dir = normalize(mix(vec2(0.0, 1.0), dir, hpx / minH)); hpx = minH; }
       vec2 off = dir * (a_corner.y * hpx * 1.15 - 0.12 * wpx) + vec2(-dir.y, dir.x) * (a_corner.x * wpx * 1.25);
+      // Project the world-space wind separately: direction stays correct when the map rotates or tilts.
+      off += (bent.xy / bent.w - top.xy / top.w) * hv * a_corner.y * a_corner.y;
       gl_Position = vec4((b + off / hv) * base.w, base.z - 0.0004 * base.w, base.w);
       v_uv = a_corner;
       v_seed = a_data.z;
@@ -42,10 +46,10 @@ const fireGL = (() => {
     varying vec2 v_uv;
     varying float v_seed;
     varying float v_int;
-    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    uniform sampler2D u_noise;
     float noise(vec2 p) {
       vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
-      return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+      return texture2D(u_noise, (i + u + 0.5) / 128.0).r;
     }
     float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
     void main() {
@@ -76,11 +80,13 @@ const fireGL = (() => {
     attribute vec2 a_corner;   // -1..1 square
     attribute vec4 a_data;     // rise height, puff radius (mercator units), seed, burned-out minute
     attribute vec2 a_wind;     // downwind drift over one puff's life (mercator units)
+    attribute vec2 a_fire;     // ignition minute, relative heat output
     varying vec2 v_uv;
     varying float v_alpha;
     varying float v_seed;
     void main() {
-      float ph = fract(u_time * 0.09 + a_data.z);                             // each puff loops: rise, grow, fade
+      float age = (u_minute - a_fire.x) * 60.0 - a_data.z / 0.09;
+      float ph = fract(max(0.0, age) * 0.09); // follows simulated time, including pause and scrubbing
       float fade = clamp(1.0 - (u_minute - a_data.w) / 8.0, 0.0, 1.0);        // dies away after burnout
       vec3 c = a_pos + vec3(a_wind * ph, a_data.x * (0.15 + ph));
       vec4 centre = u_matrix * vec4(c, 1.0);
@@ -90,7 +96,7 @@ const fireGL = (() => {
       float r = length((side.xy / side.w - b) * hv);
       gl_Position = vec4((b + a_corner * r / hv) * centre.w, centre.z - 0.0002 * centre.w, centre.w);
       v_uv = a_corner;
-      v_alpha = sin(ph * 3.14159) * 0.42 * fade;
+      v_alpha = sin(ph * 3.14159) * 0.42 * fade * step(0.0, age) * a_fire.y;
       v_seed = a_data.z;
     }`;
   const SMOKE_FS = `
@@ -99,13 +105,14 @@ const fireGL = (() => {
     varying vec2 v_uv;
     varying float v_alpha;
     varying float v_seed;
-    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    uniform sampler2D u_noise;
     float noise(vec2 p) {
       vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
-      return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+      return texture2D(u_noise, (i + u + 0.5) / 128.0).r;
     }
     void main() {
       float d = length(v_uv);
+      if (v_alpha <= 0.001 || d > 1.25) discard;
       float n = noise(v_uv * 2.5 + v_seed * 13.0 + u_time * 0.15) * 0.6 + noise(v_uv * 5.0 - u_time * 0.1) * 0.4;
       float a = (1.0 - smoothstep(0.35, 1.0, d + (n - 0.5) * 0.45)) * v_alpha;
       vec3 col = mix(vec3(0.22), vec3(0.45), n);
@@ -113,6 +120,8 @@ const fireGL = (() => {
     }`;
 
   let map = null, gl = null, flame = null, smoke = null;
+  let noiseTexture = null, lastRepaint = -Infinity, clockDirty = false;
+  const matrix = new Float32Array(16);
   let ref = [0, 0, 0];                // mercator origin for this run (keeps float32 precise)
   let minute = 0, time = 0;
 
@@ -132,7 +141,7 @@ const fireGL = (() => {
     const loc = {};
     for (const [name, size] of attrs) loc[name] = [gl.getAttribLocation(p, name), size];
     const uni = n => gl.getUniformLocation(p, n);
-    return {p, loc, u: {matrix: uni('u_matrix'), minute: uni('u_minute'), time: uni('u_time'), viewport: uni('u_viewport')},
+    return {p, loc, u: {matrix: uni('u_matrix'), minute: uni('u_minute'), time: uni('u_time'), viewport: uni('u_viewport'), noise: uni('u_noise')},
       buffer: gl.createBuffer(), count: 0, stride: attrs.reduce((s, [, n]) => s + n, 0)};
   }
 
@@ -152,6 +161,7 @@ const fireGL = (() => {
     gl.uniformMatrix4fv(prog.u.matrix, false, matrix);
     gl.uniform1f(prog.u.minute, minute);
     gl.uniform1f(prog.u.time, time);
+    gl.uniform1i(prog.u.noise, 0);
     gl.uniform2f(prog.u.viewport, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.bindBuffer(gl.ARRAY_BUFFER, prog.buffer);
     let offset = 0;
@@ -171,14 +181,29 @@ const fireGL = (() => {
     id: 'fire-gl', type: 'custom', renderingMode: '3d',
     onAdd(m, context) {
       map = m; gl = context;
-      flame = program(FLAME_VS, FLAME_FS, [['a_pos', 3], ['a_corner', 2], ['a_data', 4], ['a_dur', 1]]);
-      smoke = program(SMOKE_VS, SMOKE_FS, [['a_pos', 3], ['a_corner', 2], ['a_data', 4], ['a_wind', 2]]);
+      // Bake deterministic visual noise once; no simulation RNG is consumed.
+      const pixels = new Uint8Array(128 * 128 * 4);
+      for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+        const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+        const v = Math.floor((n - Math.floor(n)) * 255), i = (y * 128 + x) * 4;
+        pixels.set([v, v, v, 255], i);
+      }
+      const boundTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
+      noiseTexture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, noiseTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 128, 128, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+      gl.bindTexture(gl.TEXTURE_2D, boundTexture);
+      flame = program(FLAME_VS, FLAME_FS, [['a_pos', 3], ['a_corner', 2], ['a_data', 4], ['a_dur', 1], ['a_wind', 2]]);
+      smoke = program(SMOKE_VS, SMOKE_FS, [['a_pos', 3], ['a_corner', 2], ['a_data', 4], ['a_wind', 2], ['a_fire', 2]]);
     },
     render(context, options) {
-      if (!flame.count && !smoke.count) return;
+      if (!flame.count && !smoke.count) { clockDirty = false; return; }
       if (gl.bindVertexArray) gl.bindVertexArray(null); // do not disturb the vertex array MapLibre left bound
       // mainMatrix maps mercator units to clip space; move its origin to `ref` in double precision
-      const M = options.defaultProjectionData.mainMatrix, T = new Float32Array(16);
+      const M = options.defaultProjectionData.mainMatrix, T = matrix;
       for (let i = 0; i < 12; i++) T[i] = M[i];
       for (let r = 0; r < 4; r++) T[12 + r] = M[r] * ref[0] + M[4 + r] * ref[1] + M[8 + r] * ref[2] + M[12 + r];
       gl.enable(gl.BLEND);
@@ -186,8 +211,13 @@ const fireGL = (() => {
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LEQUAL);
       gl.depthMask(false);
-      draw(smoke, T);
-      draw(flame, T);
+      const activeTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
+      gl.activeTexture(gl.TEXTURE0);
+      const boundTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
+      gl.bindTexture(gl.TEXTURE_2D, noiseTexture);
+      draw(smoke, T); draw(flame, T);
+      gl.bindTexture(gl.TEXTURE_2D, boundTexture); gl.activeTexture(activeTexture);
+      clockDirty = false;
     }
   };
 
@@ -204,18 +234,40 @@ const fireGL = (() => {
       return [c.x - ref[0], c.y - ref[1], c.z, c.meterInMercatorCoordinateUnits()];
     };
     upload(flame, flames.map(s => [merc(s), s]), FLAME_CORNERS, (d, o, [[x, y, z, k], s], [cx, cy]) => {
-      d.set([x, y, z, cx, cy, s.height * k, s.halfWidth * k, s.seed, s.ig, s.dur], o);
-      return o + 10;
+      d.set([x, y, z, cx, cy, s.height * k, s.halfWidth * k, s.seed, s.ig, s.dur, s.windDx * k, -s.windDy * k], o);
+      return o + 12;
     });
     // mercator y grows southward, so north drift is negative y
     upload(smoke, puffs.map(s => [merc(s), s]), SMOKE_CORNERS, (d, o, [[x, y, z, k], s], [cx, cy]) => {
-      d.set([x, y, z, cx, cy, s.rise * k, s.radius * k, s.seed, s.out, s.windDx * k, -s.windDy * k], o);
-      return o + 11;
+      d.set([x, y, z, cx, cy, s.rise * k, s.radius * k, s.seed, s.out, s.windDx * k, -s.windDy * k, s.ig, s.heat], o);
+      return o + 13;
     });
     map.triggerRepaint();
   }
 
-  function setClock(playbackMinute, seconds) { minute = playbackMinute; time = seconds; map?.triggerRepaint(); }
+  function setClock(playbackMinute, seconds) {
+    if (minute !== playbackMinute || time !== seconds) clockDirty = true;
+    minute = playbackMinute; time = seconds;
+    const now = performance.now();
+    // Aim for a steady 30 fps without asking the whole terrain map to redraw at 120 Hz.
+    if (clockDirty && now - lastRepaint >= 32) { lastRepaint = now; map?.triggerRepaint(); }
+  }
 
-  return {layer, setData, setClock};
+  /** Display proxies, not fluid dynamics. Inputs are the actual run's model values (wind in km/h, FROM). */
+  function profile(values, size) {
+    const toward = (values.wind_dir + 180) * Math.PI / 180, ms = values.wind_spd / 3.6;
+    const east = Math.sin(toward), north = Math.cos(toward);
+    // Same relative areal heat output as FireModel.record; warmer air affects ignition, not flame temperature.
+    const heat = [0, 0.35, 0.85, 1.4][values.bldg_mat] * (1 - 0.6 * values.humidity / 100) * values.oxygen_v;
+    const strength = Math.max(0.35, Math.min(1.8, Math.sqrt(heat / (0.85 * 0.58))));
+    const height = (5 + size * 1.1) * strength;
+    const lean = height * 1.4 * ms / (ms + 5);
+    return {height, halfWidth: Math.max(2, size * 0.6) * Math.sqrt(strength),
+      windDx: lean * east, windDy: lean * north,
+      smokeDx: ms / 0.09 * east, smokeDy: ms / 0.09 * north,
+      rise: (16 + size * 0.4) * strength, heat: Math.min(1.4, strength)};
+  }
+
+  return {layer, setData, setClock, profile};
 })();
+if (typeof module !== 'undefined' && module.exports) module.exports = fireGL;

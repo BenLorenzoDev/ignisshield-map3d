@@ -16,6 +16,7 @@ const BFP_FIELDS = [
 let bfpStation = BFP_DEFAULT_STATION;
 let bfpPicking = false;
 let bfpShown = null; // timeline of the run on screen
+let bfpVisualsEmpty = false;
 
 function bfpSettings() { return {on: false, ...IgnisBFP.DEFAULTS, ...(scenario.bfp || {})}; }
 function renderBfpForm() {
@@ -131,6 +132,7 @@ function truckImages() {
   return [['bfp-truck', draw(false)], ['bfp-truck-l', draw(true)], ['bfp-station', station]];
 }
 function bfpShow(r, features) {
+  bfpVisualsEmpty = false;
   bfpShown = r?.bfp ? {tl: r.bfp, features} : null;
   map.getSource('bfp-route')?.setData({type: 'FeatureCollection', features: bfpShown ? bfpShown.tl.drives.map(d => ({type: 'Feature', geometry: {type: 'LineString', coordinates: d.coords}, properties: {}})) : []});
   bui.status.hidden = !bfpShown;
@@ -139,7 +141,11 @@ function bfpShow(r, features) {
 const bldgCentre = f => { const r = f.geometry.coordinates[0], n = r.length - 1; let x = 0, y = 0; for (let k = 0; k < n; k++) { x += r[k][0]; y += r[k][1]; } return [x / n, y / n]; };
 /** Called with the playback minute (fire-ui loop). */
 function bfpTick(minute) {
-  if (!bfpShown) { map.getSource('bfp-truck')?.setData(empty()); map.getSource('bfp-water')?.setData(empty()); return; }
+  if (!bfpShown) {
+    if (!bfpVisualsEmpty) { map.getSource('bfp-truck')?.setData(empty()); map.getSource('bfp-water')?.setData(empty()); bfpVisualsEmpty = true; }
+    return;
+  }
+  bfpVisualsEmpty = false;
   const tl = bfpShown.tl, t = IgnisBFP.truckAt(tl, minute);
   map.getSource('bfp-truck').setData({type: 'FeatureCollection', features: [{type: 'Feature', geometry: {type: 'Point', coordinates: t.at}, properties: {icon: t.dir < 0 ? 'bfp-truck-l' : 'bfp-truck'}}]});
   const water = [];

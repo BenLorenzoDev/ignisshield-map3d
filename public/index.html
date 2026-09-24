@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>IgnisShield Map 3D</title>
   <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20260924-report2">
 </head>
 <body class="loading">
   <div id="map"></div>
@@ -57,6 +57,19 @@
         </select>
       </label>
       <div id="trial-text" class="muted small"></div>
+      <div id="material-guide" class="material-guide">
+        <strong id="material-current"></strong>
+        <p id="material-source"></p>
+        <details><summary>How to set concrete, mixed or plywood</summary>
+          <p>Choose <b>Custom</b> to use each building’s inputs, then edit <b>Fuel load density (Mb / X2)</b> below. Editing shared building values requires an editor account. Trial presets apply their own values to every building.</p>
+          <table><thead><tr><th>Model class</th><th>Fuel load (MJ/m²)</th><th>Factor</th></tr></thead><tbody>
+            <tr><td>1 · Concrete / lower fuel</td><td>Below 700</td><td>0.35</td></tr>
+            <tr><td>2 · Mixed / medium fuel</td><td>700 to below 1,100</td><td>0.85</td></tr>
+            <tr><td>3 · Wood, nipa, plywood / higher fuel</td><td>1,100 or more</td><td>1.40</td></tr>
+          </tbody></table>
+          <p>These are the model’s assumed classes. Fuel load includes burnable contents, walls and roof. A traced outline cannot identify construction material, and an entered value is not automatically field-verified. Do not infer fuel load from appearance alone.</p>
+        </details>
+      </div>
       <div id="x-inputs" class="x-table"></div>
       <div id="weather-block" class="live" data-info="weather">
         <div class="wb-head"><b>Wind &amp; weather</b> <span class="muted small">sets X4, X5, X8, X9 for the whole fire</span></div>
@@ -120,6 +133,8 @@
       <div class="muted small">Uncalibrated IgnisShield research model 0.4.0, the same model IgnisShield-Web uses. Not a forecast. The same inputs and replay number always give the same fire.</div>
     </details>
 
+    <label class="check"><input id="survey-preview" type="checkbox"> Preview surveyed alleys and avoid buildings</label>
+    <div class="muted small">Uses the recorded walks for evacuation. Compare with the original routes during playback. Fire calculations stay the same.</div>
     <button id="ignite" class="fire big"><span class="num">3</span> Start fire here</button>
 
     <details class="step" id="shape-section">
@@ -142,16 +157,16 @@
     <div class="panel-head"><strong>Legend</strong><button id="legend-close" class="icon" aria-label="Close legend">×</button></div>
     <h5>People (during a fire)</h5>
     <ul>
-      <li><img class="fig fig-moving" alt=""><span><b>Escaping</b>: a family walking to safety (up to 5 figures in single file). They left home when the fire came within 30 m.</span></li>
-      <li><img class="fig fig-arrived" alt=""><span><b>Safe</b>: reached the main road or a safe area.</span></li>
-      <li><img class="fig fig-trapped" alt=""><span><b>Cut off</b>: every street and alley out was already blocked by fire when they tried to leave.</span></li>
-      <li><img class="fig fig-nopath" alt=""><span><b>No mapped way out</b>: no road or alley is drawn within 80 m of their home yet.</span></li>
+      <li><img class="fig fig-moving" alt=""><span><b>Walking</b>: one representative per departing building; nearby figures are thinned to keep the map readable. The live counts include everyone.</span></li>
+      <li><i class="evac-badge arrived">✓</i><span><b>Reached safety</b>: people who arrived at the main road or a safe area.</span></li>
+      <li><i class="evac-badge blocked">!</i><span><b>No safe route</b>: people whose way out is blocked in the simulation. This does not mean they died.</span></li>
+      <li><i class="evac-badge unmapped">?</i><span><b>Path unknown</b>: the map has no usable connection from their home to a road or alley. The map may be incomplete.</span></li>
     </ul>
     <h5>Lines</h5>
     <ul>
       <li><i class="ln ln-route"></i><span><b>Escape route</b> along mapped roads and alleys.</span></li>
-      <li><i class="ln ln-access"></i><span><b>From the door</b> to the nearest mapped road or alley (counted at half walking speed).</span></li>
-      <li><i class="ln ln-gps"></i><span><b>GPS walk</b> (Strava): a record of where students walked. Not used for escape until turned into paths (Routes → Turn walks into escape paths).</span></li>
+      <li><i class="ln ln-access"></i><span><b>House connection</b>: in the surveyed preview, this avoids mapped buildings and water. Door locations and passage access still need checking. Original runs use straight, assumed connections.</span></li>
+      <li><i class="ln ln-gps"></i><span><b>GPS walk</b> (Strava): the original recorded walk. In the surveyed preview, darker purple sections are converted into candidate walking paths used by evacuation.</span></li>
       <li><i class="ln ln-path"></i><span><b>Alley / path</b> drawn from a walk; escape routes use these. Colour = width: red &lt; 2 m, orange &lt; 3.5 m, yellow &lt; 5 m.</span></li>
       <li><i class="ln ln-road"></i><span><b>Road</b> from OpenStreetMap, same width colours.</span></li>
       <li><i class="ln ln-bridge"></i><span><b>Bridge</b> (OpenStreetMap). People cross the river and sea only on bridges and mapped roads, never through the water.</span></li>
@@ -239,6 +254,15 @@
     <div id="log-body"></div>
   </div>
 
+  <aside id="activity" aria-labelledby="activity-title" hidden>
+    <div class="activity-header">
+      <div class="activity-heading"><h2 id="activity-title">Live activity</h2><button id="activity-close" aria-label="Close activity panel">×</button></div>
+      <div class="activity-meta"><span id="activity-state" role="status"></span><span class="activity-clock">Model time <time id="activity-time"></time></span></div>
+      <p class="activity-playback-note">Updates with playback · recorded model decisions</p>
+    </div>
+    <div id="activity-body"></div>
+  </aside>
+
   <div id="playback" hidden>
     <div class="row playback-row">
       <button id="play">Pause</button>
@@ -255,20 +279,24 @@
         <option value="4">240× faster</option>
       </select></label>
       <button id="clear-fire">Clear fire</button>
+      <button id="activity-toggle" aria-controls="activity" aria-pressed="false">What’s happening</button>
     </div>
     <div class="row playback-row small">
       <select id="batch-run" aria-label="Run in this batch"></select>
       <span id="wind-arrow" aria-hidden="true">↑</span><span id="wind-text"></span>
       <span class="legend"><i style="background:#ff5a1f"></i>Burning <i style="background:#2a2522"></i>Burned</span>
-      <label class="check evac-legend" data-info="evac"><input id="evac-toggle" type="checkbox" checked> Evacuation <img class="fig fig-moving" alt="">escaping <img class="fig fig-arrived" alt="">safe <img class="fig fig-trapped" alt="">cut off</label>
+      <label class="check evac-legend" data-info="evac"><input id="evac-toggle" type="checkbox" checked> Show evacuation</label>
       <span id="run-status" class="muted"></span>
     </div>
+    <div id="evac-live" hidden></div>
+    <details id="evac-routing-review" hidden></details>
     <div id="bfp-status" class="small" hidden></div>
     <div id="running-note" class="row">
-      <span class="muted">Simulating… the results (severity and outputs Y1–Y8) appear when the fire finishes.</span>
+      <span class="muted">Playing the calculated run. Final outputs appear at the end; “What’s happening” explains each step.</span>
       <button id="skip-results" class="soft">Skip to results</button>
     </div>
     <div id="results" hidden>
+      <button id="view-calculations" class="primary-soft">View calculations</button>
       <div id="result-headline"></div>
       <div id="evac-summary" data-info="evac" hidden></div>
       <div id="bfp-summary" data-info="bfp" hidden></div>
@@ -280,23 +308,32 @@
     </div>
   </div>
 
+  <dialog id="calculation-dialog" aria-labelledby="calculation-title">
+    <div class="calculation-toolbar"><strong id="calculation-title">Run calculations</strong><button id="calculation-print">Print / Save PDF</button><button id="calculation-download">Download report</button><button id="calculation-close" aria-label="Close calculations">Close ×</button></div>
+    <iframe id="calculation-frame" title="Saved run calculation report"></iframe>
+  </dialog>
+
   <script src="vendor/maplibre-gl/maplibre-gl.js"></script>
   <script src="vendor/supabase/supabase.js"></script>
   <script src="config.js"></script>
   <script src="cloud.js"></script>
-  <script src="fire.js"></script>
+  <script src="fire.js?v=20260924-activity1"></script>
   <script src="paper.js"></script>
+  <script src="calculation-report.js?v=20260924-report2"></script>
   <script src="routing.js"></script>
-  <script src="evac.js"></script>
+  <script src="evac.js?v=20260924-walkers1"></script>
   <script src="bfp.js"></script>
-  <script src="fire-gl.js"></script>
+  <script src="fire-gl.js?v=20260924-smooth1"></script>
+  <script src="walkers-gl.js?v=20260924-smooth4"></script>
+  <script src="wind-ui.js?v=20260924-visible2"></script>
   <script src="field.js"></script>
-  <script src="app.js"></script>
-  <script src="fire-ui.js"></script>
+  <script src="app.js?v=20260924-survey1"></script>
+  <script src="fire-ui.js?v=20260924-report2"></script>
+  <script src="activity-ui.js?v=20260924-locate1"></script>
   <script src="route-ui.js"></script>
-  <script src="paths-ui.js"></script>
-  <script src="evac-ui.js"></script>
-  <script src="bfp-ui.js"></script>
+  <script src="paths-ui.js?v=20260924-survey3"></script>
+  <script src="evac-ui.js?v=20260924-report2"></script>
+  <script src="bfp-ui.js?v=20260924-perf1"></script>
   <script src="cloud-ui.js"></script>
 </body>
 </html>

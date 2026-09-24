@@ -39,8 +39,18 @@
    * One-time preparation for a set of buildings (all runs of a batch share it).
    * features, densities[i] (model coverage 0–1), households[i] (X6); roads, paths; safePoints [{lonlat, name}].
    */
-  function prepare({features, densities, households, roads, paths = [], safePoints = [], water = [], warnM = 30, clearance = 8, speedKmh = 4.5, maxStartM = 80}) {
-    const network = R.prepareNetwork(roads, paths);
+  function prepare({features, densities, households, roads, paths = [], safePoints = [], water = [], warnM = 30, clearance = 8, speedKmh = 4.5, maxStartM = 80, walkingSpace = null}) {
+    let network = R.prepareNetwork(roads, paths, walkingSpace ? {nodeM: 0.35, lineM: 0.5} : undefined);
+    let excludedObstacles = 0;
+    if (walkingSpace) network = network.filter(f => {
+      const line = lineOf(f.geometry);
+      // Existing mapped roads may include bridges. Footprints are always checked.
+      const usable = String(f.properties.from_node) !== String(f.properties.to_node)
+        && line.some((p, k) => k && dist(toM(line[k - 1]), toM(p)) > 0.01)
+        && line.every((p, k) => !k || walkingSpace.clear(line[k - 1], p, -1, f.properties.source === 'field survey'));
+      if (!usable) excludedObstacles++;
+      return usable;
+    });
     const base = R.buildGraph(network, features.map((f, i) => ({feature: f, bldg_dens: densities[i]})), [], {mode: 'Walking', speed: speedKmh});
     const speedMpm = speedKmh * 1000 / 60;
 
@@ -146,13 +156,20 @@
       for (let s = 1; s < n; s++) { const t = s / n; if (inWater([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])) return true; }
       return false;
     };
-    const starts = B.map(b => {
+    const starts = B.map((b, i) => {
       const best = new Map(), n = Math.ceil(maxStartM / SEG), gx = Math.floor(b.cm[0] / SEG), gy = Math.floor(b.cm[1] / SEG);
       for (let dx = -n; dx <= n; dx++) for (let dy = -n; dy <= n; dy++) for (const [m, k] of segGrid.get((gx + dx) + "," + (gy + dy)) || []) {
         const a = m.lm[k], c = m.lm[k + 1], vx = c[0] - a[0], vy = c[1] - a[1], L = vx * vx + vy * vy;
         const t = L ? Math.max(0, Math.min(1, ((b.cm[0] - a[0]) * vx + (b.cm[1] - a[1]) * vy) / L)) : 0;
         const q = [a[0] + t * vx, a[1] + t * vy], d = dist(q, b.cm);
-        if (d <= maxStartM && (!best.has(m.e) || d < best.get(m.e).d) && !crossesWater(b.cm, q)) best.set(m.e, {m, k, t, d, at: m.cum[k] + t * Math.sqrt(L)});
+        if (d <= maxStartM && (!best.has(m.e) || d < best.get(m.e).d) && (walkingSpace || !crossesWater(b.cm, q))) best.set(m.e, {m, k, t, d, at: m.cum[k] + t * Math.sqrt(L)});
+      }
+      if (walkingSpace) for (const [edge, st] of best) {
+        const a = st.m.line[st.k], z = st.m.line[st.k + 1], q = a.map((v, j) => v + (z[j] - v) * st.t);
+        const access = walkingSpace.route(b.c, q, {ignore: i, maxLength: maxStartM});
+        if (!access) { best.delete(edge); continue; }
+        st.access = access; st.d = 0;
+        for (let j = 1; j < access.length; j++) st.d += dist(toM(access[j - 1]), toM(access[j]));
       }
       return [...best.values()].sort((x, y) => x.d - y.d); // every street within reach: the nearest may be blocked by fire
     });
@@ -238,6 +255,16 @@
         let pick = null;
         // the way from the door must keep clear of every other house already alight (including ones catching now)
         const legClear = st => {
+          if (st.access) {
+            for (let j = 1; j < st.access.length; j++) {
+              const a = toM(st.access[j - 1]), b = toM(st.access[j]), n = Math.max(1, Math.ceil(dist(a, b) / 4));
+              for (let s = 1; s <= n; s++) {
+                const p = a.map((v, k) => v + (b[k] - v) * s / n);
+                if (within(p, clearance).some(k => k !== i && ig[k] <= t0)) return false;
+              }
+            }
+            return true;
+          }
           const a = st.m.lm[st.k], b = st.m.lm[st.k + 1], q = [a[0] + (b[0] - a[0]) * st.t, a[1] + (b[1] - a[1]) * st.t];
           const n = Math.max(2, Math.ceil(st.d / 4));
           for (let s = 1; s <= n; s++) {
@@ -258,7 +285,14 @@
         if (!pick) { groups.push({i, people, depart: t0, status: 'trapped', coords: [home], times: [t0]}); continue; }
         const {st, end} = pick, door = st.m.line[st.k].map((v, j) => v + (st.m.line[st.k + 1][j] - v) * st.t);
         let t = t0 + st.d * ACCESS_SLOWDOWN / speedMpm;
-        const coords = [home, door], times = [t0, t];
+        const coords = st.access ? st.access.slice() : [home, door], times = [t0];
+        let accessLength = 0;
+        for (let j = 1; j < coords.length; j++) {
+          accessLength += dist(toM(coords[j - 1]), toM(coords[j]));
+          times.push(t0 + (st.d ? accessLength / st.d * (t - t0) : 0));
+        }
+        if (!st.access) times[1] = t; // retain the original mode's exact timestamp
+        const accessEnd = coords.length - 1;
         const along = end === st.m.from ? st.m.line.slice(0, st.k + 1).reverse() : st.m.line.slice(st.k + 1);
         const partLen = end === st.m.from ? st.at : st.m.total - st.at;
         let prev = door, acc = 0;
@@ -270,6 +304,7 @@
         const steps = [{e: st.m.e, from: end === st.m.from ? st.m.to : st.m.from, to: end, t0: t, t1: t + pick.w, door: true, f0: doorFrac, f1: end === st.m.from ? 0 : 1}];
         t += pick.w;
         let arrived = follow(end, t, tree, coords, times, steps), status = 'safe', replans = 0;
+        let usesSurveyedAlley = steps.some(s => base.edges.get(s.e).properties.source === 'field survey');
         // Every minute on the way: if the fire now blocks a street still ahead, turn back or take another way
         const burntBy = k => i => ig[i] < k;
         // is there fire beside street e between positions a and b (0..1 along it)?
@@ -280,7 +315,11 @@
         for (let k = Math.floor(t0) + 1; k < arrived.t && replans < 8; k++) {
           const tk = treeAt(k), ahead = steps.filter(s => s.t1 > k);
           if (!ahead.length) break;
-          const cur = ahead[0], p = Math.max(0, Math.min(1, (k - cur.t0) / ((cur.t1 - cur.t0) || 1)));
+          const cur = ahead[0];
+          // In the preview, wait until reaching the mapped network before road replanning.
+          // Otherwise a replan could jump from the access path straight across a building.
+          if (walkingSpace && k < cur.t0) continue;
+          const p = Math.max(0, Math.min(1, (k - cur.t0) / ((cur.t1 - cur.t0) || 1)));
           const pos = cur.f0 + (cur.f1 - cur.f0) * p;
           const blockedAhead = fireBetween(cur.e, pos, cur.f1, k) || ahead.slice(1).some(s => tk.blocked.has(s.e));
           if (!blockedAhead) continue;
@@ -292,17 +331,33 @@
           let best = null;
           for (const node of options) {
             if (!tk.d.has(node) || tk.unsafe(node)) continue;
-            const walk = dist(hm, nodeM.get(node)) / speedMpm, cost = walk + tk.d.get(node);
-            if (!best || cost < best.cost) best = {node, walk, cost};
+            let part = [here, base.coords.get(node).lonlat];
+            if (walkingSpace) {
+              const line = lineOf(base.edges.get(cur.e).geometry), cum = [0];
+              for (let j = 1; j < line.length; j++) cum.push(cum[j - 1] + dist(toM(line[j - 1]), toM(line[j])));
+              const at = pos * cum.at(-1), forward = node === String(base.edges.get(cur.e).properties.to_node);
+              part = [here, ...(forward ? line.filter((_, j) => cum[j] > at + 1e-7) : line.filter((_, j) => cum[j] < at - 1e-7).reverse())];
+            }
+            let length = 0;
+            for (let j = 1; j < part.length; j++) length += dist(toM(part[j - 1]), toM(part[j]));
+            const walk = length / speedMpm, cost = walk + tk.d.get(node);
+            if (!best || cost < best.cost) best = {node, walk, cost, part};
           }
           if (!best) { status = 'trapped'; arrived = {node: null, t: k}; break; }
-          coords.push(base.coords.get(best.node).lonlat); times.push(k + best.walk);
+          let elapsed = 0;
+          for (let j = 1; j < best.part.length; j++) {
+            elapsed += dist(toM(best.part[j - 1]), toM(best.part[j])) / speedMpm;
+            coords.push(best.part[j]); times.push(k + elapsed);
+          }
           steps.length = 0;
+          if (walkingSpace) steps.push({e: cur.e, from: best.node === cur.to ? cur.from : cur.to, to: best.node,
+            t0: k, t1: k + best.walk, f0: pos, f1: best.node === String(base.edges.get(cur.e).properties.to_node) ? 1 : 0});
           arrived = follow(best.node, k + best.walk, tk, coords, times, steps);
+          usesSurveyedAlley ||= steps.some(s => base.edges.get(s.e).properties.source === 'field survey');
           tree = tk;
         }
-        if (status === 'trapped') groups.push({i, people, depart: t0, status, coords, times, replans});
-        else groups.push({i, people, depart: t0, arrive: arrived.t, status, to: safe.get(arrived.node), coords, times, replans});
+        if (status === 'trapped') groups.push({i, people, depart: t0, status, coords, times, replans, accessEnd, usesSurveyedAlley});
+        else groups.push({i, people, depart: t0, arrive: arrived.t, status, to: safe.get(arrived.node), coords, times, replans, accessEnd, usesSurveyedAlley});
       }
       const sum = (arr, f) => arr.reduce((s, g) => s + f(g), 0);
       const ok = groups.filter(g => g.status === 'safe'), okPeople = sum(ok, g => g.people);
@@ -322,7 +377,7 @@
       const l = lineOf(f.geometry).map(toM);
       return l.some((p, k) => k && crossesWater(l[k - 1], p));
     }).map(([, f]) => lineOf(f.geometry));
-    return {evaluate, bridges, safeNodes: [...safe].map(([id, label]) => ({lonlat: base.coords.get(id).lonlat, label})), areas};
+    return {evaluate, excludedObstacles, bridges, safeNodes: [...safe].map(([id, label]) => ({lonlat: base.coords.get(id).lonlat, label})), areas};
   }
 
   /** Where an evacuee group is at `minute`: null before leaving, else [lon, lat] and state. */
@@ -338,7 +393,8 @@
     let k = 1;
     while (k < t.length - 1 && t[k] < minute) k++;
     const a = g.coords[k - 1], b = g.coords[k], span = t[k] - t[k - 1], f = span > 0 ? (minute - t[k - 1]) / span : 1;
-    return {at: [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], state: 'moving', dir: b[0] >= a[0] ? 1 : -1};
+    return {at: [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], state: 'moving', dir: b[0] >= a[0] ? 1 : -1,
+      heading: Math.atan2((b[0] - a[0]) * Math.cos(a[1] * Math.PI / 180), b[1] - a[1])};
   }
 
   const api = {prepare, positionAt, PEOPLE_PER_HOUSEHOLD};

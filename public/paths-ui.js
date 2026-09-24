@@ -16,6 +16,7 @@ let pathDraft = null;      // [lng, lat][] while drawing a path
 let snap = null;           // snapped point under the cursor while drawing
 let selectedPath = null;
 let fieldReady = false;
+let fieldLoading = Promise.resolve();
 
 /** Field-surveyed paths, for routing (route-ui.js). */
 const fieldPaths = () => paths.features;
@@ -121,7 +122,9 @@ pui.toPaths.addEventListener('click', async () => {
   } catch (err) { showHint(`Could not save the paths: ${err.message}`, 9000); }
   pui.toPaths.disabled = false;
 });
-pui.showTracks.addEventListener('change', () => map.setLayoutProperty('tracks', 'visibility', pui.showTracks.checked ? 'visible' : 'none'));
+pui.showTracks.addEventListener('change', () => {
+  for (const id of ['tracks', 'survey-walks']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', pui.showTracks.checked ? 'visible' : 'none');
+});
 
 // ---------- drawing a path ----------
 function startPathDraw() {

@@ -18,6 +18,14 @@ The **AI outlines** and **Inventory** checkboxes show or hide those layers.
 
 Controls: drag to pan, right-drag (or Ctrl+drag) to rotate and tilt, scroll to zoom.
 
+During fire playback, pale, tapered breeze trails flow where the active run's wind is blowing **toward**. Stronger wind moves them faster; they pause with playback and disappear in calm weather or when the fire is cleared. Direction follows the map when rotated or tilted. The small curves are illustrative, not measured air trajectories, and the trails are hidden when the device requests reduced motion. Flames lean and smoke drifts with the same run inputs. These display effects do not change the documented fire calculations or results.
+
+The **Live activity** panel (opened with **What’s happening**) keeps the latest recorded update at the top, with one short explanation, one possible next building and at most two earlier summaries. New updates return to the top automatically. Orange highlights the latest update, blue identifies wind effects, and the amber next-step chance is a possibility, not a prediction. Rewinding the playback only shows history up to that minute.
+
+Flame and smoke noise is cached in a small GPU texture, and building colors update with recorded fire steps rather than flickering the whole map. Walking figures use a GPU layer with route segments uploaded once: their positions and running poses advance on each rendered frame, including while rotating the camera. People counts update every 200 ms. Playback uses a stable map pixel ratio of at most 0.75; pausing or clearing restores its original sharpness. Controls and explanations remain at full resolution. The actual frame rate still depends on the device and 3D map load. These rendering adjustments do not alter simulation inputs, results or playback time.
+
+Fire, BFP response and evacuation calculations run in a background worker in both routing modes, keeping the interface available during startup. Worker parity tests compare fire frames, explanations, model metrics, BFP timelines and original evacuation results with the existing direct calculations.
+
 ## Satellite photo date
 
 In Satellite mode a menu picks the photo date from Esri World Imagery Wayback. All five photos are about 0.6 m/pixel (zoom 18); zooming further only enlarges them.
@@ -110,7 +118,23 @@ Replace these rules when the students supply their formulas.
 
 **Run log.** Every run is logged with its X1–X9 and Y1–Y8. Batches show the mean ± SD of Sf and Ab. **Export CSV** downloads the whole log for analysis. Replay works for runs made in the current session. The log is kept in this browser (`ignisshield-map3d.runs`, last 1,000 runs).
 
+**Material guidance.** The building input panel shows the active model class and whether fuel load comes from a trial, an entered value or a default. Expand the guide for the existing 700 / 1,100 MJ/m² thresholds and 0.35 / 0.85 / 1.40 factors. Construction material cannot be established by tracing a roof; entered values are not automatically field-verified. Use Custom and the existing Mb field for per-building fuel inputs; trial presets override these values.
+
+**Worked calculations.** At the end of a new run (or after **Skip to results**), choose **View calculations**. This opens a separate report with saved input sources, worked conversions for the starting building, susceptibility and heat calculations, and all Y1–Y8 formulas, substitutions and results. Expand the building and minute ledgers to check aggregate totals. **Print / Save PDF** includes every supporting table; **Download report** saves a standalone HTML file that works offline. Input snapshots and geometry are captured when the run starts, so subsequent map edits cannot rewrite the explanation. Reports are available for runs calculated in this session; the compact historical run log has no full input/geometry snapshot. Download the report before closing the session.
+
+The calculation report reproduces the current model definitions, including assigned burn duration (not shortened by BFP) and all ignited footprint area (including buildings still burning or extinguished). It distinguishes these predictions from measurements and from the earlier paper’s historical 29-building results. Report generation does not rerun the simulation or change the random sequence. `tests/calculation-report.test.mjs` checks all eight outputs against the stored model metrics, snapshot isolation and safe standalone HTML rendering.
+
 Every saved building takes part in a run (AI outlines and traced), or only those inside the study boundary if that box is ticked. The orange inventory is display-only.
+
+### What’s happening panel
+
+During calculation, the panel identifies the actual stage: preparing inputs and roads, running fire steps, comparing BFP response when enabled, and evaluating evacuation. Playback then uses the saved results; it is not running those algorithms again.
+
+During playback, **What’s happening** shows the current minute’s new ignitions and the three highest ignition chances for the following step. These are probabilities, not promises: several buildings, or none, may ignite. Each explanation names the strongest contributing burning building, the footprint gap, wind multiplier, combined exposure from other fires, and any BFP wetting. **Locate** focuses the building on the map. Building numbers follow the run’s saved feature order; the original feature id is available in the label’s tooltip.
+
+Dashed amber **model exposure** links briefly identify the strongest contributors for up to three new ignitions. They illustrate relationships in the calculation, not heat rays or flying embers. The existing model does not block exposure behind intervening buildings or calculate individual ember paths. It allows a farther building to ignite while a closer one stays safe.
+
+The optional explanation recorder observes the existing rates, probabilities and random draws without changing equations, target order, random-number usage, time steps or results. Explanations stay in the current session with replay frames. `tests/explanations.test.mjs` checks observation with and without suppression; Python parity also runs with explanations enabled.
 
 ## Routes
 
@@ -147,6 +171,18 @@ Public maps miss most of Polo's interior alleys, so students walk them with Stra
 
 Shared mode needs `supabase/upgrade-2-field-paths.sql` run once. Raw GPX files belong in `field-data/gpx/`, which is kept out of the repository.
 
+### Local surveyed-alley preview
+
+The **Preview surveyed alleys and avoid buildings** checkbox is enabled by default on localhost. It is a review mode, not a replacement for the reviewed evacuation model. It creates candidate walking paths in memory from the loaded GPS walks, joins crossings to streets and other alleys, and computes house connections around mapped building footprints and water. Fire equations, random draws, fire frames and BFP routing are unchanged. Preview runs stay in the local run log even for signed-in editors; the original tracks and shared paths are never overwritten.
+
+`survey-preview.js` uses the existing GPS cleanup, adjusts points inside obstacles by at most 6 m, and searches around footprint corners. Candidate GPS detours are limited to the original segment length plus 30 m (200 m maximum); unresolvable gaps remain disconnected. The preview joins nearby junctions within 0.35 m and lines within 0.5 m to preserve tight alley turns. Collapsed or obstacle-crossing network edges are excluded. Candidate widths remain the existing 1 m assumption until measured.
+
+`walk-space.js` caches a visibility graph with exact segment/polygon checks. House access remains limited to 80 m, with the existing half-speed access travel calculation applied to the actual detour length. Only the departing household's own footprint is exempt on its access leg; every other footprint blocks it. The preview's replanning follows the street geometry instead of drawing a straight shortcut to a junction. Missing connections are reported, never replaced by a straight fallback. Geometry preparation and the original/preview evacuation comparison run in a worker so they do not compete with map interaction.
+
+The playback bar's **Surveyed alleys preview · Compare routes** shows both evacuation outcomes for identical recorded fire frames. Purple lines are candidate surveyed alleys; green routes and walkers follow the computed geometry. These paths still need field verification: roof outlines, GPS accuracy, doors, fences, passage rights and actual usable widths can differ from the map. The preview does not claim a surveyed doorway or a globally shortest real-world route. Uncheck the preview before starting a fire to use the original routing behavior.
+
+Explanations now appear in a fixed bottom-right card, update on hover or keyboard focus, and remain available until closed with **×** or **Escape**.
+
 
 ## Evacuation during a fire
 
@@ -155,14 +191,15 @@ Every fire run also shows the residents walking to safety (`public/evac.js`, dis
 - **Who leaves:** residents of every building the fire comes within 30 m of leave at that minute, or when their own building catches. People per building = households (X6) × 5, the Baliwagan average (2026 census: 6,141 people in 1,209 households).
 - **Where to:** the quickest reachable safe place. That is either the **main road** (every junction on a trunk, primary, secondary or tertiary road; the paper describes it as cemented and passable) or a **safe area** that editors add in **Routes → Safe areas** (e.g. a covered court). Safe areas are shared by the class.
 - **Route:** each household steps out onto the nearest point on any road or path within 80 m that it can reach without crossing water (sea, river, ponds from OpenStreetMap: `public/data/water.geojson`, made by `scripts/water.mjs`) or passing within 8 m of another burning house (the walk there is counted at half speed: squeezing between houses), then follows the walking network, meaning inventory roads plus the alleys drawn from the GPS walks, with the same travel times as Routes (4.5 km/h, slowed by narrow and crowded streets). People see where the fire is: streets within 8 m of a burning building are closed and streets within 30 m of the fire count 5× longer, so they head away from it. Every minute they check the way ahead; if the fire has blocked it they turn back or take another street (up to 8 times), otherwise they are cut off where they stand. A safe place stops counting once fire is within 16 m of it.
-- **On the map:** human figures (families walk in single file, up to 5 figures). Playback is a time-lapse: the speed menu goes from real time (true walking pace) to 240× faster, default 30×.
-- **Figures:**
-  - **white dots** are walking;
-  - **green** reached safety;
-  - **red** are cut off (every way out was blocked);
-  - **grey** have no mapped road or alley within 80 m.
+- **On the map:** one small white walking figure represents a departing building's residents. Its feet follow the same timed coordinates used to draw the green route, including each access-path bend. Figures face their route direction relative to the camera and are drawn beneath foreground buildings, so hidden alley walkers do not appear on roofs. Nearby figures are thinned on screen to keep the fire visible; live counts still include everyone. Playback is a time-lapse: the speed menu goes from real time (true walking pace) to 240× faster, default 30×.
+- **Plain-language labels** group stationary people, for example “40 people / No safe route”:
+  - **Reached safety** means they arrived at the main road or a safe area;
+  - **No safe route** means their way out is blocked in the simulation;
+  - **Path unknown** means there is no usable connection to the mapped road/path network.
 
-  Solid green lines are routes along mapped streets. Dotted lines are the walk from home to the nearest mapped one, where the real alley isn't drawn yet.
+  **People now** reports the full totals at the minute on screen. Overlapping map labels are hidden to keep the scene readable, but everyone remains included in these totals. These are route outcomes, not casualty estimates: the model does not calculate injuries or deaths.
+
+  Routes are shown only for groups currently walking. Solid green lines are recorded routes along mapped streets. Dashed lines are assumed straight connections where the real alley is unknown; they may cross unburned houses.
 - **Results and log:** people who left, reached safety, had no safe route or had no mapped path; average and longest evacuation time. Logged per run (`evac_*` columns in the CSV).
 - **Limits:** everyone leaves at once and walks at 4.5 km/h, with no crowding, panic or waiting for family, so real evacuations take longer. Routes are only as good as the mapped alleys.
 

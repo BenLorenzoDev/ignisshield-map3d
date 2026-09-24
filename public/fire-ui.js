@@ -157,6 +157,10 @@ function renderInputs(f) {
   if (infoAnchor) setTimeout(() => showInfo(infoAnchor), 0);
   let m;
   try { m = P.toModel(buildingPaperValues(f), local); } catch (err) { fui.inputsNote.textContent = err.message; return; }
+  $('#material-current').textContent = `Model material: class ${m.bldg_mat} · ${['', 'Concrete / lower fuel', 'Mixed / medium fuel', 'Wood, nipa or plywood / higher fuel'][m.bldg_mat]}`;
+  $('#material-source').textContent = trial ? `From Trial ${scenario.source}: ${values.Mb} MJ/m². Assumed for every building; actual construction is not verified.`
+    : typeof p.Mb === 'number' ? `From entered fuel load: ${p.Mb} MJ/m². Field verification is not recorded.`
+      : `From default fuel load: ${P.DEFAULTS.Mb} MJ/m². An assumption; actual construction is unknown.`;
   fui.inputsNote.innerHTML = [
     `The model uses: coverage ${m.bldg_dens.toFixed(2)}, material ${m.bldg_mat} (${['', 'concrete', 'mixed', 'wood/nipa'][m.bldg_mat]}), wind ${m.wind_spd.toFixed(1)} km/h.`,
     trial ? '' : (p.inputs_src === 'entered' ? 'Some building values entered by you.' : 'Grey numbers are defaults (assumptions, not measurements): type to replace them.')
@@ -212,7 +216,7 @@ const HELP = {
     sim: 'The run stops earlier if the fire goes out. Total simulation time (Y8) can never be longer than this.'},
   evac: {title: 'Evacuation on foot',
     what: 'Where the residents go. When the fire comes within 30 m of a building, or the building itself catches, its residents leave and walk to the nearest safe place: a safe area set by the class (Routes panel) or the main road, which the paper describes as cemented and passable. People per building = households (X6) × 5, the Baliwagan average (2026 census).',
-    get: 'Watch the dots: white = walking, green = reached safety, red = cut off (every street out was blocked by fire when they set off), grey = no mapped road or alley near their home yet. Solid green = route along mapped roads and alleys; dotted = the walk from home to the nearest mapped one, where the real alley is not drawn yet. Draw the missing alleys (Draw path) to make routes realistic.',
+    get: 'White figures represent groups walking to safety. Map labels say how many people reached safety, have no safe route, or have an unknown path. The bottom panel counts everyone, including groups whose labels overlap and are hidden. These are not death counts. Solid green lines follow mapped roads; dashed links are assumed connections where the actual alley is unknown and may cross houses.',
     sim: 'Each family steps out of its door onto the nearest road or alley it can reach without crossing water or passing a burning house, then walks the network (roads plus the alleys from the GPS walks). They see where the fire is: streets beside burning buildings are closed, streets within 30 m of the fire are avoided, and every minute they check the way ahead — if the fire has blocked it, they turn back or take another street. It does not change the fire. Times assume people leave at once and walk at 4.5 km/h; no crowding, so real evacuations are slower.'},
   bfp: {title: 'BFP fire truck response (optional)',
     what: 'Adds the Bureau of Fire Protection: the station receives the call, a truck drives there on roads wide enough for it, parks near the fire and sprays water. The students’ paper model does not include this; leave it unticked for the paper’s runs.',
@@ -311,7 +315,7 @@ function showInfo(anchor) {
   const key = anchor?.dataset.info;
   if (!key || (P.BY_KEY[key] && !selected()) || (key.startsWith('out-') && !run)) { hideInfo(); return; }
   infoAnchor = anchor;
-  infoCard.innerHTML = infoContent(key);
+  infoCard.innerHTML = '<button class="info-close" aria-label="Close explanation">×</button>' + infoContent(key);
   infoCard.hidden = false;
   placeInfo();
 }
@@ -321,36 +325,20 @@ function placeInfo() {
     infoAnchor = document.querySelector(`[data-info="${infoAnchor.dataset.info}"]`);
     if (!infoAnchor) { hideInfo(); return; }
   }
-  const panel = infoAnchor.closest('#panel');
-  // Phones, or tablets without room beside the form: show the card as a sheet under the toolbar
-  const sheet = window.innerWidth <= 700 || (panel && window.innerWidth - panel.getBoundingClientRect().right < 340);
-  infoCard.classList.toggle('sheet', sheet);
-  if (sheet) { infoCard.style.left = infoCard.style.top = ''; infoLine.hidden = true; return; }
-  const a = infoAnchor.getBoundingClientRect(), w = infoCard.offsetWidth, h = infoCard.offsetHeight;
-  if (panel) {
-    // beside the form, joined to the field by a line
-    const p = panel.getBoundingClientRect(), mid = a.top + Math.min(a.height, 40) / 2, left = p.right + 36;
-    infoCard.style.left = `${left}px`;
-    infoCard.style.top = `${Math.max(p.top, Math.min(window.innerHeight - h - 12, mid - 40))}px`;
-    const field = infoAnchor.querySelector('input, select') ?? infoAnchor, from = field.getBoundingClientRect().right;
-    infoLine.hidden = !(mid > p.top && mid < p.bottom);
-    Object.assign(infoLine.style, {left: `${from}px`, top: `${mid - 1}px`, width: `${Math.max(0, left - from)}px`});
-  } else {
-    // results: above the tile
-    infoCard.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, a.left + a.width / 2 - w / 2))}px`;
-    infoCard.style.top = `${Math.max(8, a.top - h - 10)}px`;
-    infoLine.hidden = true;
-  }
+  // One predictable reading location; never follows the hovered field or cursor.
+  infoCard.classList.toggle('sheet', window.innerWidth <= 700);
+  infoCard.style.left = infoCard.style.top = '';
+  infoLine.hidden = true;
 }
 function hideInfo() { infoAnchor = null; infoCard.hidden = infoLine.hidden = true; }
-infoCard.addEventListener('click', () => { if (infoCard.classList.contains('sheet')) hideInfo(); }); // tap to close on phones
+infoCard.addEventListener('click', e => { if (e.target.closest('.info-close')) hideInfo(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideInfo(); });
 
 const helpZone = el => el?.closest?.('#panel, #playback, #routes');
 document.addEventListener('mouseover', e => {
   if (e.target.closest?.('#input-info')) return;
   const a = e.target.closest?.('[data-info]');
   if (a && helpZone(a)) { if (a !== infoAnchor) showInfo(a); }
-  else if (infoAnchor && !helpZone(e.target)) (focusAnchor ? showInfo(focusAnchor) : hideInfo());
 });
 document.addEventListener('focusin', e => {
   const a = e.target.closest?.('[data-info]');
@@ -358,7 +346,7 @@ document.addEventListener('focusin', e => {
 });
 document.addEventListener('focusout', () => setTimeout(() => {
   const a = document.activeElement?.closest?.('[data-info]');
-  if (!a || !helpZone(a)) { focusAnchor = null; if (!document.querySelector('[data-info]:hover')) hideInfo(); }
+  if (!a || !helpZone(a)) focusAnchor = null;
 }, 0));
 fui.xInputs.addEventListener('input', () => { if (infoAnchor) setTimeout(() => showInfo(infoAnchor), 0); });
 fui.xInputs.closest('#panel').addEventListener('scroll', placeInfo);
@@ -455,7 +443,8 @@ function updateWind() {
   // during playback, describe the wind the run on screen used
   const w = run ? run.wind : P.TRIALS[scenario.source] ? scenario.trials[scenario.source] : scenario.custom;
   fui.windArrow.style.transform = `rotate(${(w.Tw + 180 - map.getBearing()) % 360}deg)`; // arrow points where the wind blows TO
-  fui.windText.textContent = `Wind from ${COMPASS[Math.round(w.Tw / 45) % 8]} (${w.Tw}°), ${w.Uw} m/s`;
+  fui.windArrow.hidden = w.Uw === 0;
+  fui.windText.textContent = w.Uw === 0 ? 'Calm · 0 m/s' : `Wind from ${COMPASS[Math.round(w.Tw / 45) % 8]} (${w.Tw}°) → toward ${COMPASS[Math.round(((w.Tw + 180) % 360) / 45) % 8]} · ${w.Uw} m/s`;
 }
 map.on('rotate', updateWind);
 
@@ -538,56 +527,67 @@ fui.logCsv.addEventListener('click', () => {
 
 // ---------- running ----------
 let run = null;   // run being shown: {id, result, features, ids}
+let fireStarting = false;
+function buildingSelectionLocked() { return fireStarting || run !== null; }
 let shown = null; // fire state currently drawn for each building
 let frameIndex = 0;
 let playTimer = null; // truthy while playing (route-ui checks it)
+// Choose the playback resolution once, avoiding framebuffer resizes during gestures.
+let normalPixelRatio = null;
 const STATE_NAMES = ['safe', 'burning', 'burned', 'extinguished'];
 
 async function startFire() {
+  if (buildingSelectionLocked()) return;
   const origin = selected();
   if (!origin) return;
+  fireStarting = true;
   fui.ignite.disabled = true;
   fui.ignite.textContent = 'Calculating…';
+  let evacCtx = null;
   await new Promise(r => setTimeout(r, 30)); // let the button repaint before the calculation
   try {
-    const features = runBuildings();
-    const index = features.indexOf(origin);
+    await activity.stage('Preparing building inputs', 'Reading the selected buildings, weather and replay settings.');
+    const sourceFeatures = runBuildings();
+    const index = sourceFeatures.indexOf(origin);
+    const features = structuredClone(sourceFeatures); // keep each run independent of later map edits
     if (index < 0) throw new Error('This building is outside the study boundary. Untick "Only buildings inside the study boundary" or choose another building.');
     const inputs = modelInputs(features);
-    const byFeature = new Map(features.map((f, i) => [f, inputs[i]]));
+    const runSettings = structuredClone(scenario);
     const batch = `b${Date.now()}`, utc = new Date().toISOString();
     const trial = P.TRIALS[scenario.source];
     const x = buildingPaperValues(origin), local = measuredDensity().get(origin.properties.id);
     const ids = features.map(f => f.properties.id);
     const w = trial ? scenario.trials[scenario.source] : scenario.custom, wind = {Tw: w.Tw, Uw: w.Uw}; // smoke drifts downwind
+    const calculation = IgnisCalculationReport.capture(features, features.map(buildingPaperValues),
+      features.map(f => measuredDensity().get(f.properties.id)), {utc, trial:trial?scenario.source:null,
+        weatherSource:scenario.custom.source, originIndex:index, maxMinutes:scenario.minutes,
+        extent:scenario.boundaryOnly?'Study boundary only':'All mapped buildings', bfp:bfpSettings()});
+    await activity.stage('Preparing roads and escape paths', 'Building the route network for evacuation and any enabled BFP response.');
     // Evacuation on foot for every run (same network and residents for the whole batch)
-    const evacCtx = prepareEvac(features, inputs, features.map(f => buildingPaperValues(f).Nh));
-    const bfpCtx = prepareBfp(features, inputs); // optional BFP response (off by default; not part of the paper's model)
+    evacCtx = await prepareEvac(features, inputs, calculation.buildings.map(b => b.paper.Nh));
+    calculation.bfp = structuredClone(evacCtx.bfpSettings);
     let first = null;
     const records = [];
-    for (let k = 0; k < scenario.repeats; k++) {
-      const seed = scenario.seed + k;
-      const truck = bfpCtx ? bfpCtx.create() : null;
-      const result = IgnisFire.simulate(features, f => byFeature.get(f), index, seed, scenario.minutes, truck ? () => truck.hook : null);
-      // with the BFP on, also run the same fire without it, for the comparison in the results
-      const noBfp = truck ? IgnisFire.simulate(features, f => byFeature.get(f), index, seed, scenario.minutes) : null;
+    for (let k = 0; k < runSettings.repeats; k++) {
+      const seed = runSettings.seed + k;
+      const computed = await evacCtx.run({index, seed, minutes: runSettings.minutes, number: `${k + 1} of ${runSettings.repeats}`});
+      const {result, evac, bfp: timeline, noBfpIgnited} = computed, es = evac?.summary;
       const id = `${batch}-${k}`;
-      const evac = evacCtx ? evacCtx.evaluate(result.frames) : null, es = evac?.summary;
-      sessionRuns.set(id, {id, result, features, ids, seed, wind, evac, bfp: truck?.timeline ?? null,
-        noBfpIgnited: noBfp ? noBfp.frames.at(-1).states.filter(s => s > 0).length : null});
+      sessionRuns.set(id, {id, result, features, ids, seed, wind, inputs, evac, bfp: timeline, noBfpIgnited, calculation});
       const out = P.outputs(result.metrics);
       records.push({
-        id, batch, utc, run_in_batch: k + 1, scenario: trial ? `Trial ${scenario.source} conditions` : 'Custom',
-        ignition: origin.properties.id, seed, max_minutes: scenario.minutes, n_buildings: features.length,
-        extent: scenario.boundaryOnly ? 'study boundary' : 'all mapped buildings', inputs: trial ? 'trial values, all buildings' : 'per building + weather',
+        id, batch, utc, run_in_batch: k + 1, scenario: (trial ? `Trial ${runSettings.source} conditions` : 'Custom') + (evacCtx?.preview ? ' · alley preview' : ''),
+        ignition: origin.properties.id, seed, max_minutes: runSettings.minutes, n_buildings: features.length,
+        extent: runSettings.boundaryOnly ? 'study boundary' : 'all mapped buildings', inputs: trial ? 'trial values, all buildings' : 'per building + weather',
         X1_Db: x.Db ?? `measured ${local.Db.toFixed(5)}`, X2_Mb_MJ_m2: x.Mb, X3_O2_ratio: x.O2, X4_Hr_pct: x.Hr, X5_Ta_C: x.Ta,
         X6_Nh: x.Nh, X7_Wr_m: x.Wr, X8_Uw_m_s: x.Uw, X9_Tw_deg: x.Tw,
-        weather_source: trial ? 'trial values' : (scenario.custom.source ?? 'entered by hand'),
+        weather_source: trial ? 'trial values' : (runSettings.custom.source ?? 'entered by hand'),
         Y1_Sf: out[0].value, level: P.level(out[0].value), Y2_If_kW_m: out[1].value, Y3_R_m_min: out[2].value, Y4_Q_MW: out[3].value,
         Y5_Ab_m2: out[4].value, Y6_phi_deg: out[5].value, Y7_tau_min: out[6].value, Y8_Tsim_min: out[7].value,
+        evac_routing: evacCtx?.preview ? 'surveyed alley preview' : 'original',
         evac_people: es?.people ?? '', evac_reached_safety: es?.safe ?? '', evac_no_safe_route: es?.trapped ?? '', evac_no_mapped_path: es?.nopath ?? '',
-        bfp_response: truck ? 'on' : 'off', bfp_first_on_scene_min: truck?.timeline.arrivals[0] ? +truck.timeline.arrivals[0].minute.toFixed(2) : '',
-        bfp_buildings_put_out: truck ? truck.timeline.extinguished : '', bfp_ignited_without: noBfp ? noBfp.frames.at(-1).states.filter(s => s > 0).length : '',
+        bfp_response: timeline ? 'on' : 'off', bfp_first_on_scene_min: timeline?.arrivals[0] ? +timeline.arrivals[0].minute.toFixed(2) : '',
+        bfp_buildings_put_out: timeline ? timeline.extinguished : '', bfp_ignited_without: noBfpIgnited ?? '',
         evac_avg_min: es ? +es.avgMin.toFixed(2) : '', evac_max_min: es ? +es.maxMin.toFixed(2) : '', safe_areas: safeAreas.map(s => s.name).join('; '),
         status: result.status, model: result.model, calc_s: result.metrics.Total_Simulation_Time_Sec
       });
@@ -595,20 +595,23 @@ async function startFire() {
     }
     // Editors' runs go to the class log; everyone else's stay on this device
     let shared = false;
-    if (cloud.enabled && cloud.editor) {
+    if (cloud.enabled && cloud.editor && !evacCtx?.preview) {
       try { await cloud.addRuns(records); shared = true; } catch (err) { showHint(`Could not add these runs to the class log (${err.message}); they are saved on this device.`, 9000); }
     }
     // The live echo of our own insert may already have added a run
     for (const r of records) if (!runLog.some(x => x.id === r.id)) runLog.push({...r, shared, by: shared ? cloud.user.email : undefined});
     saveLog();
     if (!fui.log.hidden) renderLog();
-    fui.batchRun.innerHTML = Array.from({length: scenario.repeats}, (_, k) => `<option value="${batch}-${k}">Run ${k + 1} of ${scenario.repeats} · replay #${scenario.seed + k}</option>`).join('');
+    fui.batchRun.innerHTML = Array.from({length: runSettings.repeats}, (_, k) => `<option value="${batch}-${k}">Run ${k + 1} of ${runSettings.repeats} · replay #${runSettings.seed + k}</option>`).join('');
     select(null);
     showRun(first);
   } catch (err) {
+    activity.fail(err.message);
     showHint(`The fire model could not run: ${err.message}`, 9000);
   } finally {
-    fui.ignite.disabled = false;
+    evacCtx?.dispose?.();
+    fireStarting = false;
+    fui.ignite.disabled = run !== null;
     fui.ignite.textContent = 'Start fire here';
   }
 }
@@ -616,6 +619,10 @@ async function startFire() {
 function showRun(id) {
   clearFire();
   run = sessionRuns.get(id);
+  select(null);
+  fui.ignite.disabled = true;
+  activity.show(run);
+  windFX.set(map, run.wind);
   prepareEffects(run);
   if (![...fui.batchRun.options].some(o => o.value === id)) {
     fui.batchRun.innerHTML = `<option value="${id}">Logged run · replay #${run.seed}</option>`;
@@ -638,6 +645,9 @@ function showRun(id) {
   fui.playback.hidden = false;
   updateGuide();
   displayMinute = 0;
+  lastVisualMinute = lastVisualClock = NaN;
+  lastFirePaintKey = '';
+  paintPending = true;
   showFrame(0);
   play();
   lastTs = 0;
@@ -650,6 +660,7 @@ fui.batchRun.addEventListener('change', () => showRun(fui.batchRun.value));
 // model gives it (ignition minute to burned-out minute). Flames and smoke are GPU sprites (fire-gl.js); the ground
 // glow and the red/orange pulse of burning buildings are map layers.
 let displayMinute = 0, clock = 0, lastTs = 0, lastPaint = 0, rafId = null;
+let lastVisualMinute = NaN, lastVisualClock = NaN, lastVisualView = '', paintPending = false;
 /** Simulated time as mm:ss, and how much faster than real time it plays. */
 function showClock() {
   if (!run) return;
@@ -710,21 +721,21 @@ function showFrame(k) {
     if (shown[i] !== s) { map.setFeatureState({source: 'buildings', id: run.ids[i]}, {fire: STATE_NAMES[s], ph: phase(i)}); shown[i] = s; }
     if (s === 1) {
       const c = shapeOf(i), alt = (c.alt ?? 0) + c.h;
-      c.spots.forEach((lngLat, j) => flames.push({lngLat, alt, height: 5 + c.size * 1.1, halfWidth: Math.max(2, c.size * 0.6),
+      const effect = fireGL.profile(run.inputs[i], c.size);
+      c.spots.forEach((lngLat, j) => flames.push({lngLat, alt, ...effect,
         seed: seedOf(i, j), ig: ig[i], dur: dur[i]}));
       points.push({type: 'Feature', geometry: {type: 'Point', coordinates: c.centre}, properties: {ig: ig[i], dur: dur[i], ph: phase(i)}});
     }
     if (s === 1 || (s >= 2 && minute - out[i] < 8)) smoky.push(i);
   });
-  // Smoke: two puffs per building, drifting downwind as they rise
+  // Smoke follows the same saved weather and building inputs as the flames and spread.
   smoky.sort((a, b) => ig[b] - ig[a]);
-  const toward = ((run.wind.Tw + 180) % 360) * Math.PI / 180, drift = 10 + 6 * run.wind.Uw;
   const puffs = [];
   for (const i of smoky.slice(0, SMOKE_MAX)) {
-    const c = shapeOf(i);
+    const c = shapeOf(i), effect = fireGL.profile(run.inputs[i], c.size);
     for (let j = 0; j < 2; j++) {
-      puffs.push({lngLat: c.centre, alt: (c.alt ?? 0) + c.h + 2, rise: 16 + c.size * 0.4, radius: 3 + c.size * 0.25, seed: seedOf(i, j + 7),
-        out: Number.isNaN(out[i]) ? 1e9 : out[i], windDx: drift * Math.sin(toward), windDy: drift * Math.cos(toward)});
+      puffs.push({lngLat: c.centre, alt: (c.alt ?? 0) + c.h + 2, rise: effect.rise, radius: 3 + c.size * 0.25, seed: seedOf(i, j + 7),
+        ig: ig[i], heat: effect.heat, out: Number.isNaN(out[i]) ? 1e9 : out[i], windDx: effect.smokeDx, windDy: effect.smokeDy});
     }
   }
   fireGL.setData(flames, puffs);
@@ -734,31 +745,32 @@ function showFrame(k) {
   showClock();
   fui.status.textContent = `${row.Burning} burning · ${row.Burned} burned${row.Extinguished ? ` · ${row.Extinguished} put out` : ''}${k === frames.length - 1 ? ` · ${run.result.status}` : ''}`;
   if (k === frames.length - 1) setResults(true);
+  activity.render(run, k);
+  activity.status(displayMinute, Boolean(playTimer));
   paintFire();
   if (typeof onFireFrame === 'function') onFireFrame();
 }
 
-/** Ground glow at the current (fractional) minute, and the red/orange pulse of burning buildings. */
-let paintCount = 0;
+/** Update the ground glow once per recorded minute; flame motion is handled by the GPU. */
+let lastFirePaintKey = '';
 function paintFire() {
-  const m = displayMinute, t = clock, is3d = view === '3d';
-  paintCount++;
+  const m = Math.floor(displayMinute), is3d = view === '3d', key = `${m}:${view}`;
+  if (key === lastFirePaintKey) return;
+  lastFirePaintKey = key;
   // 0.35 -> 1 while catching (first quarter of the burn), full blaze, then dying down to embers (0.2); same as fire-gl.js
   const intensity = ['let', 'p', ['/', ['-', m, ['get', 'ig']], ['get', 'dur']],
     ['case', ['<', ['var', 'p'], 0.25], ['+', 0.35, ['*', 2.6, ['var', 'p']]], ['<', ['var', 'p'], 0.7], 1,
       ['max', 0.2, ['-', 1, ['*', 2.5, ['-', ['var', 'p'], 0.7]]]]]];
-  map.setPaintProperty('fire-glow', 'heatmap-weight', ['*', intensity, ['+', 0.8, ['*', 0.2, ['sin', ['+', t * 5, ['get', 'ph']]]]]]);
-  // Recolouring every building is the expensive part, so it runs on every third update (about 5 times a second)
-  if (paintCount % 3) return;
-  const burn = ['interpolate', ['linear'], ['sin', ['+', t * 6, ['coalesce', ['feature-state', 'ph'], 0]]], -1, '#b3230a', 1, '#ff7000'];
-  map.setPaintProperty(is3d ? 'buildings-3d' : 'buildings-2d', is3d ? 'fill-extrusion-color' : 'fill-color', buildingColor(burn));
+  map.setPaintProperty('fire-glow', 'heatmap-weight', intensity);
+  // Flames already flicker on the GPU. Keep building paint stable instead of rebuilding the map style.
+  map.setPaintProperty(is3d ? 'buildings-3d' : 'buildings-2d', is3d ? 'fill-extrusion-color' : 'fill-color', buildingColor(FIRE.burnB));
 }
 
 function loop(ts) {
   rafId = requestAnimationFrame(loop);
-  const dt = lastTs ? Math.min(0.25, (ts - lastTs) / 1000) : 0; // cap: a stalled tab does not jump ahead
+  const dt = lastTs && !document.hidden ? Math.max(0, (ts - lastTs) / 1000) : 0;
   lastTs = ts;
-  clock += dt;
+  if (playTimer) clock += dt;
   if (playTimer) {
     const end = run.result.frames.length - 1;
     displayMinute = Math.min(end, displayMinute + dt * Number(fui.speed.value));
@@ -767,8 +779,22 @@ function loop(ts) {
     if (displayMinute >= end) pause();
   }
   fireGL.setClock(displayMinute, clock); // flames and smoke animate every frame on the GPU
-  if (ts - lastPaint > 70) { lastPaint = ts; paintFire(); evacTick(displayMinute); bfpTick(displayMinute); showClock(); }
+  evacActors?.setClock(displayMinute, clock);
+  windFX.tick(clock);
+  // Keep camera gestures free of repeated style rebuilds; paused playback needs no data uploads.
+  const moving = map.isMoving();
+  if (ts - lastPaint > 200) { // counters/routes only; actors animate on every rendered frame
+    lastPaint = ts;
+    if (displayMinute !== lastVisualMinute || clock !== lastVisualClock || view !== lastVisualView) {
+      lastVisualMinute = displayMinute; lastVisualClock = clock; lastVisualView = view;
+      paintPending = true;
+      evacTick(displayMinute); bfpTick(displayMinute); showClock();
+    }
+    if (paintPending && !moving) { paintFire(); paintPending = false; }
+    activity.status(displayMinute, Boolean(playTimer));
+  }
 }
+document.addEventListener('visibilitychange', () => { lastTs = 0; });
 
 /** Buildings burning or burned at the minute on screen (for routing around the fire). */
 function fireAffectedNow() {
@@ -778,20 +804,32 @@ function fireAffectedNow() {
 
 function play() {
   if (frameIndex >= run.result.frames.length - 1) { displayMinute = 0; showFrame(0); }
+  if (normalPixelRatio === null) normalPixelRatio = map.getPixelRatio();
+  const playbackRatio = Math.min(normalPixelRatio, 0.75);
+  if (map.getPixelRatio() > playbackRatio) map.setPixelRatio(playbackRatio);
   playTimer = true;
   fui.play.textContent = 'Pause';
+  activity.status(displayMinute, true);
 }
 function pause() {
   playTimer = null;
+  if (normalPixelRatio !== null) {
+    if (map.getPixelRatio() !== normalPixelRatio) map.setPixelRatio(normalPixelRatio);
+    normalPixelRatio = null;
+  }
   fui.play.textContent = 'Play';
+  activity.status(displayMinute, false);
 }
 function clearFire() {
+  activity.clear();
+  windFX.clear();
   bfpShow(null);
   evacClear();
   pause();
   cancelAnimationFrame(rafId);
   rafId = null;
   run = null;
+  fui.ignite.disabled = fireStarting;
   if (!map.getSource('fire-points')) return;
   map.removeFeatureState({source: 'buildings'});
   map.getSource('fire-points').setData(empty());
@@ -810,12 +848,32 @@ fui.skip.addEventListener('click', () => { pause(); displayMinute = run.result.f
 /** Results (severity headline and Y1–Y8) are shown only once the simulated fire has finished. */
 function setResults(show) {
   fui.results.hidden = !show;
+  $('#view-calculations').disabled = !run?.calculation;
   fui.runningNote.hidden = show;
   if (show) { fui.results.classList.remove('reveal'); void fui.results.offsetWidth; fui.results.classList.add('reveal'); }
   else if (infoAnchor?.closest?.('#results')) hideInfo();
 }
 fui.frame.addEventListener('input', () => { pause(); displayMinute = Number(fui.frame.value); showFrame(displayMinute); });
 fui.clearFire.addEventListener('click', clearFire);
+const calculationDialog = $('#calculation-dialog'), calculationFrame = $('#calculation-frame');
+let calculationDocument = '', calculationFilename = '';
+$('#view-calculations').addEventListener('click', () => {
+  if (!run?.calculation) return;
+  pause();
+  try {
+    calculationDocument = IgnisCalculationReport.html(run);
+    calculationFilename = `IgnisShield-calculations-${run.id.replace(/[^a-zA-Z0-9_-]/g, '_')}.html`;
+    calculationFrame.srcdoc = calculationDocument;
+    calculationDialog.showModal();
+  } catch (err) { showHint(`Could not prepare the calculation report: ${err.message}`, 8000); }
+});
+$('#calculation-close').addEventListener('click', () => calculationDialog.close());
+$('#calculation-print').addEventListener('click', () => calculationFrame.contentWindow.print());
+$('#calculation-download').addEventListener('click', () => {
+  const url = URL.createObjectURL(new Blob([calculationDocument], {type:'text/html;charset=utf-8'}));
+  const link = document.createElement('a'); link.href = url; link.download = calculationFilename; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
 fui.speed.addEventListener('change', () => { scenario.speed = fui.speed.value; saveScenario(); renderSim(); });
 
 // ---------- live weather (Open-Meteo: free, no key, CC BY 4.0) ----------

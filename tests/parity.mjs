@@ -35,7 +35,7 @@ for (const [i, list] of adjacency) for (const [j] of list) if (i < j && pairs.le
 const runs = scenarios.map((s, n) => {
   const {cells, adjacency} = F.buildCells(features, f => ({...perBuilding[features.indexOf(f)], humidity: s.humidity, temp_c: s.temp_c, wind_dir: s.wind_dir, wind_spd: s.wind_spd}));
   const ignition = [0, 17, 55, 101][n];
-  return {s, ignition, cells, adjacency, js: F.simulate(features, f => ({...perBuilding[features.indexOf(f)], humidity: s.humidity, temp_c: s.temp_c, wind_dir: s.wind_dir, wind_spd: s.wind_spd}), ignition, s.seed, s.minutes)};
+  return {s, ignition, cells, adjacency, js: F.simulate(features, f => ({...perBuilding[features.indexOf(f)], humidity: s.humidity, temp_c: s.temp_c, wind_dir: s.wind_dir, wind_spd: s.wind_spd}), ignition, s.seed, s.minutes, null, true)};
 });
 
 const job = {

@@ -91,7 +91,8 @@
   class FireModel {
     /** hook (optional, not part of model.py): hook(minute, states) -> {extinguish: ids, protect: Map id -> factor}.
      *  Used only for the optional BFP response; without it the model is exactly model.py. */
-    constructor(cells, adjacency, ignitionId, seed = 42, stepMinutes = 1.0, maxMinutes = 60, hook = null) {
+    constructor(cells, adjacency, ignitionId, seed = 42, stepMinutes = 1.0, maxMinutes = 60, hook = null, explain = false) {
+      this.explanations = explain ? [] : null; // observation only; never feeds decisions or consumes random numbers
       this.hook = hook;
       this.protect = null;
       this.cells = new Map(cells.map(c => [c.id, c]));
@@ -150,30 +151,65 @@
     step() {
       if (this.finished) return this.timeline[this.timeline.length - 1];
       const dt = Math.min(this.dt, this.maxMinutes - this.minute);
+      const detail = this.explanations ? {from: this.minute, to: this.minute + dt, checked: 0, sources: 0,
+        top: [], ignited: [], burned: [], extinguished: []} : null;
+      const contributors = detail ? new Map() : null;
       if (this.hook) { // firefighting acts at the start of the minute
         const act = this.hook(this.minute, this.states) || {};
-        for (const id of act.extinguish || []) if (this.states.get(id) === 'burning') this.states.set(id, 'extinguished');
+        for (const id of act.extinguish || []) if (this.states.get(id) === 'burning') {
+          this.states.set(id, 'extinguished');
+          detail?.extinguished.push(id);
+        }
         this.protect = act.protect || null;
       }
       const hazards = new Map();
       for (const sourceId of this.ids) {
         if (this.states.get(sourceId) !== 'burning') continue;
+        if (detail) detail.sources++;
         for (const [targetId, gap] of this.adjacency.get(sourceId) || []) {
           if (this.states.get(targetId) === 'safe') {
-            hazards.set(targetId, (hazards.get(targetId) || 0.0) + ignitionRate(this.cells.get(sourceId), this.cells.get(targetId), gap) * (this.protect?.get(targetId) ?? 1));
+            const rate = ignitionRate(this.cells.get(sourceId), this.cells.get(targetId), gap) * (this.protect?.get(targetId) ?? 1);
+            hazards.set(targetId, (hazards.get(targetId) || 0.0) + rate);
+            if (detail) {
+              const previous = contributors.get(targetId);
+              const count = (previous?.count ?? 0) + 1;
+              if (!previous || rate > previous.rate) contributors.set(targetId, {sourceId, gap, rate, count});
+              else previous.count = count;
+            }
           }
         }
       }
       const nextMinute = this.minute + dt;
+      const assessed = [];
       for (const targetId of [...hazards.keys()].sort((a, b) => a - b)) {
         const probability = 1 - Math.exp(-hazards.get(targetId) * dt);
-        if (this.rng.random() < probability) {
+        const draw = this.rng.random(); // exactly the same single draw, in the same target order
+        let explanation;
+        if (detail) {
+          const c = contributors.get(targetId), source = this.cells.get(c.sourceId), target = this.cells.get(targetId), v = target.values;
+          const bearing = Math.atan2(target.x - source.x, target.y - source.y);
+          const toward = ((v.wind_dir + 180) % 360) * Math.PI / 180;
+          explanation = {id: targetId, probability, sourceId: c.sourceId, gap: c.gap, sourceCount: c.count,
+            windFactor: Math.exp(Math.min(2, 0.9 * v.wind_spd / 30) * Math.cos(bearing - toward)),
+            protection: this.protect?.get(targetId) ?? 1};
+          assessed.push(explanation);
+        }
+        if (draw < probability) {
           this.states.set(targetId, 'burning');
           this.ignitedAt.set(targetId, nextMinute);
+          detail?.ignited.push({...explanation, draw});
         }
       }
       for (const [k, at] of this.ignitedAt) {
-        if (this.states.get(k) === 'burning' && nextMinute - at >= this.duration.get(k)) this.states.set(k, 'burned');
+        if (this.states.get(k) === 'burning' && nextMinute - at >= this.duration.get(k)) {
+          this.states.set(k, 'burned');
+          detail?.burned.push(k);
+        }
+      }
+      if (detail) {
+        detail.checked = assessed.length;
+        detail.top = assessed.sort((a, b) => b.probability - a.probability || a.id - b.id).slice(0, 3);
+        this.explanations.push(detail);
       }
       this.minute = nextMinute;
       return this.record();
@@ -300,16 +336,17 @@
 
   /** Run to the horizon and keep every minute's states, as engine.run_fire does. */
   /** makeHook (optional): (cells) => hook for FireModel, used for the BFP response. */
-  function simulate(features, valuesFor, ignitionIndex, seed, minutes, makeHook = null) {
+  function simulate(features, valuesFor, ignitionIndex, seed, minutes, makeHook = null, explain = false) {
     const started = performance.now();
     const {cells, adjacency} = buildCells(features, valuesFor);
-    const model = new FireModel(cells, adjacency, ignitionIndex, seed, 1, minutes, makeHook ? makeHook(cells) : null);
+    const model = new FireModel(cells, adjacency, ignitionIndex, seed, 1, minutes, makeHook ? makeHook(cells) : null, explain);
     const code = {safe: 0, burning: 1, burned: 2, extinguished: 3};
     const frame = () => ({minute: model.minute, states: Uint8Array.from(model.ids, id => code[model.states.get(id)])});
     const frames = [frame()];
     while (!model.finished) { model.step(); frames.push(frame()); }
     return {
       model: MODEL_VERSION, frames, timeline: model.timeline,
+      ...(explain ? {explanations: model.explanations} : {}),
       metrics: {...model.metrics(), Total_Simulation_Time_Sec: Math.round(performance.now() - started) / 1000},
       status: [...model.states.values()].includes('burning') ? 'Horizon reached' : 'Extinguished',
       neighbours: [...adjacency.values()].reduce((s, l) => s + l.length, 0) / 2

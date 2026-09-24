@@ -267,8 +267,8 @@ map.on('load', async () => {
 
   ui.count.textContent = store.features.length;
   initRoutes(data);
-  initField();
-  initEvac();
+  fieldLoading = initField();
+  evacLoading = initEvac();
   initBfp();
   document.body.classList.remove('loading'); // toolbar usable once every layer exists
   applyLayers();
@@ -366,6 +366,7 @@ function showHint(text, hideAfterMs) {
 
 // ---------- selecting and editing ----------
 function select(id) {
+  if (id != null && typeof buildingSelectionLocked === 'function' && buildingSelectionLocked()) return;
   if (id) selectPath(null);
   selectedId = id;
   selectedVertex = null;
@@ -492,6 +493,10 @@ map.on('click', e => {
     if (nearFirst(e.point)) return finishTrace();
     drawing.push([e.lngLat.lng, e.lngLat.lat]);
     renderDraft();
+    return;
+  }
+  if (typeof buildingSelectionLocked === 'function' && buildingSelectionLocked()) {
+    showHint('Clear the current fire before selecting another building.', 3000);
     return;
   }
   const editLayers = view === '3d' ? ['edit-3d'] : ['edit-vertex', 'edit-mid', 'edit-fill'];

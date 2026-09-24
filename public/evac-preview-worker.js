@@ -8,7 +8,12 @@ self.onmessage = event => {
       features = data.features;
       values = new Map(features.map((f, i) => [f, data.inputs[i]]));
       preview = null; diagnostics = null; derived = [];
-      if (data.preview) {
+      // Normal runs always avoid obstacles. Explicit legacy requests remain available
+      // for reproducibility tests and the comparison, never as a silent fallback.
+      const mode = data.routingMode ?? (data.preview === false ? 'original' : 'obstacle-aware');
+      if (!['obstacle-aware','original'].includes(mode)) throw new Error(`Unknown evacuation routing mode: ${mode}`);
+      const obstacleAware = mode === 'obstacle-aware';
+      if (obstacleAware) {
         self.postMessage({id, progress: 'Checking surveyed alleys against mapped buildings…'});
         const built = IgnisSurveyPreview.prepare(data);
         self.postMessage({id, progress: 'Finding clear connections from houses to the alley network…'});
@@ -35,7 +40,10 @@ self.onmessage = event => {
       const noBfp = truck ? IgnisFire.simulate(features, f => values.get(f), data.index, data.seed, data.minutes) : null;
       self.postMessage({id, progress: `Calculating evacuation · run ${data.number}`});
       const evac = (preview || original)?.evaluate(result.frames) ?? null;
-      if (preview) evac.preview = {diagnostics, derived, baseline: original.evaluate(result.frames).summary};
+      if (preview) {
+        evac.routingMode = 'obstacle-aware';
+        evac.preview = {diagnostics, derived, baseline: original.evaluate(result.frames).summary};
+      }
       self.postMessage({id, value: {result, evac, bfp: truck?.timeline ?? null,
         noBfpIgnited: noBfp ? noBfp.frames.at(-1).states.filter(s => s > 0).length : null}});
     }

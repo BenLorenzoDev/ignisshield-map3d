@@ -13,8 +13,7 @@ let evacMarkerKeys = {};
 let evacActors = null;
 let waterPolys = [];       // sea, river and ponds (OpenStreetMap): nobody walks across them
 let evacLoading = Promise.resolve();
-const surveyPreview = $('#survey-preview'), routingReview = $('#evac-routing-review');
-surveyPreview.checked = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+const routingReview = $('#evac-routing-review');
 map.on('moveend', () => { if (evacShown) evacTick(typeof displayMinute === 'number' ? displayMinute : 0); });
 
 async function initEvac() {
@@ -25,14 +24,15 @@ async function initEvac() {
     map.addLayer({id: 'bridges', type: 'line', source: 'bridges', layout: {'line-cap': 'butt'},
       paint: {'line-color': '#6d4c41', 'line-width': ['interpolate', ['linear'], ['zoom'], 15, 4, 19, 12], 'line-opacity': 0.55}}, 'roads');
   } catch { /* evacuation still works, without the water check */ }
-  map.addSource('evac-routes', {type: 'geojson', data: empty()});
-  map.addSource('survey-walks', {type: 'geojson', data: empty()});
+  // Preserve tight alley bends: map tiling must not simplify a safe detour into a shortcut.
+  map.addSource('evac-routes', {type: 'geojson', data: empty(), tolerance:0});
+  map.addSource('survey-walks', {type: 'geojson', data: empty(), tolerance:0});
   map.addLayer({id: 'survey-walks', type: 'line', source: 'survey-walks',
     layout: {'line-cap': 'round', 'line-join': 'round'},
     paint: {'line-color': '#b216a6', 'line-width': 2.5, 'line-opacity': 0.85}}, 'buildings-3d');
   map.addLayer({id: 'evac-routes', type: 'line', source: 'evac-routes', layout: {'line-cap': 'round', 'line-join': 'round'},
     filter: ['!', ['get', 'access']], paint: {'line-color': '#00e676', 'line-width': ['interpolate', ['linear'], ['zoom'], 15, 1.5, 19, 4], 'line-opacity': 0.75}});
-  // home to the nearest mapped road or alley: the actual way out is not mapped yet
+  // House access uses the recorded detour geometry, with entrances still inferred.
   // Both layers use the same source; inverse-scaled dash lengths keep the outline aligned.
   map.addLayer({id: 'evac-access-outline', type: 'line', source: 'evac-routes', filter: ['get', 'access'],
     layout: {'line-cap': 'round', 'line-join': 'round'},
@@ -116,16 +116,16 @@ function safeClick(e) {
   return true;
 }
 
-/** Evacuation calculator for a batch of runs (null if the network is not ready). */
+/** Evacuation calculator for a batch of runs. Normal routes always check mapped obstacles. */
 async function prepareEvac(features, inputs, households) {
   await Promise.all([fieldLoading, evacLoading]);
   const settings = bfpSettings();
   const data = {features, inputs, densities: inputs.map(m => m.bldg_dens), households, roads, paths: fieldPaths(), safePoints: safeAreas, water: waterPolys,
-    preview: surveyPreview.checked, bfp: settings.on ? {station: bfpStation.lonlat, params: settings} : null};
+    routingMode: 'obstacle-aware', bfp: settings.on ? {station: bfpStation.lonlat, params: settings} : null};
   {
-    const worker = new Worker('evac-preview-worker.js?v=20260924-fleet2'), pending = new Map();
+    const worker = new Worker('evac-preview-worker.js?v=20260924-routes1'), pending = new Map();
     let sequence = 0;
-    const dispose = () => { worker.terminate(); for (const p of pending.values()) p.reject(new Error('Preview stopped.')); pending.clear(); };
+    const dispose = () => { worker.terminate(); for (const p of pending.values()) p.reject(new Error('Simulation preparation stopped.')); pending.clear(); };
     worker.onmessage = ({data: message}) => {
       const p = pending.get(message.id); if (!p) return;
       if (message.progress) { activity.stage('Preparing simulation', message.progress); return; }
@@ -137,7 +137,7 @@ async function prepareEvac(features, inputs, households) {
     const request = (action, data) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, {resolve, reject}); worker.postMessage({id, action, data}); });
     try {
       await request('prepare', {...data, tracks: tracks.features, obstacles: store.features});
-      return {run: args => request('run', args), dispose, preview: data.preview, bfpSettings:settings};
+      return {run: args => request('run', args), dispose, routingMode:data.routingMode, bfpSettings:settings};
     } catch (err) { dispose(); throw err; }
   }
 }
@@ -152,16 +152,15 @@ function evacShow(r) {
   evacRepresentatives = null; evacLastSelection = -Infinity; evacSelectionCamera = ''; evacMarkerKeys = {};
   const s = evacShown?.summary;
   const preview = evacShown?.preview;
-  surveyPreview.disabled = Boolean(r);
   routingReview.hidden = !preview; routingReview.open = false;
   if (preview) {
     const d = preview.diagnostics, old = preview.baseline;
     const row = (label, before, after) => `<tr><th scope="row">${label}</th><td>${before}</td><td>${after}</td></tr>`;
-    routingReview.innerHTML = `<summary>Surveyed alleys preview · Compare routes</summary>
+    routingReview.innerHTML = `<summary>Routes avoid buildings · Compare with original assumptions</summary>
       <p><b>${d.paths} GPS-derived alley sections</b> prepared. <b>${evacShown.groups.filter(g => g.usesSurveyedAlley).length} groups of residents</b> use surveyed alleys in this run. Purple lines show candidate alleys; green shows the route people take.</p>
       <p>House connections avoid mapped footprints and water. GPS positions were adjusted where necessary; doors, widths and passage access still need field review.</p>
       <p>Calculated evacuation outcomes below can extend beyond the fire playback. The live people counts above show the current minute.</p>
-      <table><thead><tr><th>People / travel time</th><th>Original</th><th>Preview</th></tr></thead><tbody>
+      <table><thead><tr><th>People / travel time</th><th>Original assumptions</th><th>Avoiding obstacles</th></tr></thead><tbody>
       ${row('Reached safety', old.safe, s.safe)}${row('No safe route', old.trapped, s.trapped)}${row('Path unresolved', old.nopath, s.nopath)}
       ${row('Average time for those reaching safety', `${old.avgMin.toFixed(1)} min`, `${s.avgMin.toFixed(1)} min`)}</tbody></table>
       <p>Same recorded fire in both comparisons. ${d.unresolvedSegments} GPS connections could not be resolved; ${d.excludedObstacles} unusable network sections were excluded. Original survey data is unchanged.</p>`;
@@ -296,7 +295,7 @@ function evacTick(minute) {
   }
 }
 function evacClear() {
-  evacShown = null; evacTick(0); eui.summary.hidden = true; routingReview.hidden = true; surveyPreview.disabled = false;
+  evacShown = null; evacTick(0); eui.summary.hidden = true; routingReview.hidden = true;
   evacActors?.clear();
   map.getSource('survey-walks')?.setData(empty());
   if (map.getLayer('tracks')) map.setPaintProperty('tracks', 'line-opacity', 0.75);

@@ -25,4 +25,15 @@ for(const preview of [false,true])for(const response of [0,1,10]){
   if(!preview)assert.deepEqual(plain(actual.evac),plain(E.prepare(data).evaluate(expected.frames)),'original evacuation unchanged in worker');
   else assert.deepEqual(plain(actual.evac.preview.baseline),plain(E.prepare(data).evaluate(expected.frames).summary),'comparison uses the identical fire frames');
 }
-console.log('Worker parity passed in both routing modes, with zero, one and ten BFP trucks: identical fire frames, explanations, model metrics, response and original evacuation.');
+// A normal production request must not depend on a localhost-only preview toggle.
+for(const defaults of [{},{routingMode:'obstacle-aware'}]) {
+  request('prepare',{...data,...defaults});
+  const normal=request('run',{index:0,seed:42,minutes:10,number:'1 of 1'});
+  assert.equal(normal.evac.routingMode,'obstacle-aware','normal runs use obstacle avoidance');
+  assert.ok(normal.evac.preview.baseline,'original assumptions remain available as a labelled comparison');
+  const expected=F.simulate(features,f=>inputs[features.indexOf(f)],0,42,10,null,true);
+  delete normal.result.metrics.Total_Simulation_Time_Sec;delete expected.metrics.Total_Simulation_Time_Sec;
+  assert.deepEqual(plain(normal.result),plain(expected),'default routing preserves every fire calculation');
+}
+assert.throws(()=>request('prepare',{...data,routingMode:'unknown'}),/Unknown evacuation routing mode/,'an invalid mode cannot silently restore straight connections');
+console.log('Worker parity and default-routing checks passed: normal runs avoid obstacles; fire frames, explanations, model metrics and BFP response are unchanged.');

@@ -217,7 +217,7 @@ const HELP = {
     sim: 'The run stops earlier if the fire goes out. Total simulation time (Y8) can never be longer than this.'},
   evac: {title: 'Evacuation on foot',
     what: 'Where the residents go. When the fire comes within 30 m of a building, or the building itself catches, its residents leave and walk to the nearest safe place: a safe area set by the class (Routes panel) or the main road, which the paper describes as cemented and passable. People per building = households (X6) × 5, the Baliwagan average (2026 census).',
-    get: 'White figures represent groups walking to safety. Map labels say how many people reached safety, have no safe route, or have an unknown path. The bottom panel counts everyone, including groups whose labels overlap and are hidden. These are not death counts. Solid green lines follow mapped roads; dashed links are assumed connections where the actual alley is unknown and may cross houses.',
+    get: 'White figures represent groups walking to safety. The counts include everyone, even when figures or labels overlap. These are not death counts. Solid green lines follow mapped roads and alleys; dashed house connections bend around mapped buildings and water. If a clear connection cannot be found, the group is marked Path unknown. Door locations and passage access still need field checking.',
     sim: 'Each family steps out of its door onto the nearest road or alley it can reach without crossing water or passing a burning house, then walks the network (roads plus the alleys from the GPS walks). They see where the fire is: streets beside burning buildings are closed, streets within 30 m of the fire are avoided, and every minute they check the way ahead — if the fire has blocked it, they turn back or take another street. It does not change the fire. Times assume people leave at once and walk at 4.5 km/h; no crowding, so real evacuations are slower.'},
   bfp: {title: 'BFP fire truck response (optional)',
     what: 'Adds the Bureau of Fire Protection: the station receives the call and sends the selected number of trucks. Each drives on truck-usable roads, parks near the fire and sprays its own targets. The students’ paper model does not include this; leave it unticked for the paper’s runs.',
@@ -580,7 +580,7 @@ async function startFire() {
       sessionRuns.set(id, {id, result, features, ids, seed, wind, inputs, evac, bfp: timeline, noBfpIgnited, calculation});
       const out = P.outputs(result.metrics);
       records.push({
-        id, batch, utc, run_in_batch: k + 1, scenario: (trial ? `Trial ${runSettings.source} conditions` : 'Custom') + (evacCtx?.preview ? ' · alley preview' : ''),
+        id, batch, utc, run_in_batch: k + 1, scenario: (trial ? `Trial ${runSettings.source} conditions` : 'Custom') + ' · surveyed routes',
         ignition: origin.properties.id, seed, max_minutes: runSettings.minutes, n_buildings: features.length,
         extent: runSettings.boundaryOnly ? 'study boundary' : 'all mapped buildings', inputs: trial ? 'trial values, all buildings' : 'per building + weather',
         X1_Db: x.Db ?? `measured ${local.Db.toFixed(5)}`, X2_Mb_MJ_m2: x.Mb, X3_O2_ratio: x.O2, X4_Hr_pct: x.Hr, X5_Ta_C: x.Ta,
@@ -588,7 +588,7 @@ async function startFire() {
         weather_source: trial ? 'trial values' : (runSettings.custom.source ?? 'entered by hand'),
         Y1_Sf: out[0].value, level: P.level(out[0].value), Y2_If_kW_m: out[1].value, Y3_R_m_min: out[2].value, Y4_Q_MW: out[3].value,
         Y5_Ab_m2: out[4].value, Y6_phi_deg: out[5].value, Y7_tau_min: out[6].value, Y8_Tsim_min: out[7].value,
-        evac_routing: evacCtx?.preview ? 'surveyed alley preview' : 'original',
+        evac_routing: evacCtx.routingMode,
         evac_people: es?.people ?? '', evac_reached_safety: es?.safe ?? '', evac_no_safe_route: es?.trapped ?? '', evac_no_mapped_path: es?.nopath ?? '',
         bfp_response: timeline ? 'on' : 'off', bfp_first_on_scene_min: timeline?.arrivals[0] ? +timeline.arrivals[0].minute.toFixed(2) : '',
         bfp_trucks: timeline?.truckCount ?? (timeline?1:0), bfp_buildings_per_truck_min: timeline?.params?.perMin ?? '',
@@ -600,7 +600,7 @@ async function startFire() {
     }
     // Editors' runs go to the class log; everyone else's stay on this device
     let shared = false;
-    if (cloud.enabled && cloud.editor && !evacCtx?.preview) {
+    if (cloud.enabled && cloud.editor) {
       try { await cloud.addRuns(records); shared = true; } catch (err) { showHint(`Could not add these runs to the class log (${err.message}); they are saved on this device.`, 9000); }
     }
     // The live echo of our own insert may already have added a run

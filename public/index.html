@@ -138,8 +138,7 @@
       <div class="muted small">Uncalibrated IgnisShield research model 0.4.0, the same model IgnisShield-Web uses. Not a forecast. The same inputs and replay number always give the same fire.</div>
     </details>
 
-    <label class="check"><input id="survey-preview" type="checkbox"> Preview surveyed alleys and avoid buildings</label>
-    <div class="muted small">Uses the recorded walks for evacuation. Compare with the original routes during playback. Fire calculations stay the same.</div>
+    <div class="muted small"><b>Routes avoid mapped obstacles.</b> Evacuation uses the surveyed alleys and finds connections around buildings and water. If no connection is found, it shows “Path unknown”.</div>
     <button id="ignite" class="fire big"><span class="num">3</span> Start fire here</button>
 
     <details class="step" id="shape-section">
@@ -170,8 +169,8 @@
     <h5>Lines</h5>
     <ul>
       <li><i class="ln ln-route"></i><span><b>Escape route</b> along mapped roads and alleys.</span></li>
-      <li><i class="ln ln-access"></i><span><b>House connection</b>: in the surveyed preview, this avoids mapped buildings and water. Door locations and passage access still need checking. Original runs use straight, assumed connections.</span></li>
-      <li><i class="ln ln-gps"></i><span><b>GPS walk</b> (Strava): the original recorded walk. In the surveyed preview, darker purple sections are converted into candidate walking paths used by evacuation.</span></li>
+      <li><i class="ln ln-access"></i><span><b>House connection</b>: bends around mapped buildings and water. Door locations and passage access still need checking.</span></li>
+      <li><i class="ln ln-gps"></i><span><b>GPS walk</b> (Strava): the original recorded walk. Darker purple sections are candidate walking paths used by evacuation.</span></li>
       <li><i class="ln ln-path"></i><span><b>Alley / path</b> drawn from a walk; escape routes use these. Colour = width: red &lt; 2 m, orange &lt; 3.5 m, yellow &lt; 5 m.</span></li>
       <li><i class="ln ln-road"></i><span><b>Road</b> from OpenStreetMap, same width colours.</span></li>
       <li><i class="ln ln-bridge"></i><span><b>Bridge</b> (OpenStreetMap). People cross the river and sea only on bridges and mapped roads, never through the water.</span></li>
@@ -324,7 +323,7 @@
   <script src="cloud.js"></script>
   <script src="fire.js?v=20260924-activity1"></script>
   <script src="paper.js"></script>
-  <script src="calculation-report.js?v=20260924-fleet2"></script>
+  <script src="calculation-report.js?v=20260924-routes1"></script>
   <script src="routing.js"></script>
   <script src="evac.js?v=20260924-walkers1"></script>
   <script src="bfp.js?v=20260924-fleet2"></script>
@@ -336,11 +335,11 @@
   <script src="performance.js?v=20260924-lowpower1"></script>
   <script src="app.js?v=20260924-lowpower1"></script>
   <script src="playback.js?v=20260924-playback1"></script>
-  <script src="fire-ui.js?v=20260924-lowpower1"></script>
+  <script src="fire-ui.js?v=20260924-routes1"></script>
   <script src="activity-ui.js?v=20260924-locate1"></script>
   <script src="route-ui.js"></script>
   <script src="paths-ui.js?v=20260924-survey3"></script>
-  <script src="evac-ui.js?v=20260924-lowpower1"></script>
+  <script src="evac-ui.js?v=20260924-routes1"></script>
   <script src="bfp-ui.js?v=20260924-fleet2"></script>
   <script src="performance-ui.js?v=20260924-lowpower1"></script>
   <script src="cloud-ui.js"></script>

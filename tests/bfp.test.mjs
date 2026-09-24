@@ -2,6 +2,7 @@
 import {createRequire} from 'node:module';
 import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 const require = createRequire(import.meta.url);
 const F = require('../public/fire.js'), P = require('../public/paper.js'), BFP = require('../public/bfp.js');
 const read = p => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
@@ -20,6 +21,10 @@ test('without the BFP checkbox nothing changes (no hook = the paper model)', () 
 });
 test('the truck leaves after call + turnout, arrives, and puts buildings out', () => {
   const c = ctx.create(), r = run(() => c.hook);
+  // Golden result from the deployed single-truck controller at f67b916, before the fleet extension.
+  const metrics={...r.metrics};delete metrics.Total_Simulation_Time_Sec;
+  const fingerprint=createHash('sha256').update(JSON.stringify({frames:r.frames,timeline:r.timeline,metrics})).digest('hex');
+  assert.equal(fingerprint,'4502ff168286a6c8da1b9c12f424e0c2547082cf53a9bf3f479558bae6458830','default one-truck response keeps the deployed fire outcomes');
   assert.equal(c.timeline.dispatch, 4);
   assert.ok(c.timeline.arrivals[0].minute > 4);
   assert.ok(c.timeline.arrivals[0].gap >= 10, 'parks at least 10 m from the flames');

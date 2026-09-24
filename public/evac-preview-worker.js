@@ -1,5 +1,5 @@
 /* Run the unchanged models off the animation/UI thread, in both routing modes. */
-importScripts('fire.js?v=20260924-activity1', 'routing.js', 'bfp.js', 'field.js', 'walk-space.js?v=20260924-survey2', 'survey-preview.js?v=20260924-survey2', 'evac.js?v=20260924-walkers1');
+importScripts('fire.js?v=20260924-activity1', 'routing.js', 'bfp.js?v=20260924-fleet2', 'field.js', 'walk-space.js?v=20260924-survey2', 'survey-preview.js?v=20260924-survey2', 'evac.js?v=20260924-walkers1');
 let original, preview, diagnostics, derived, features, values, bfp;
 self.onmessage = event => {
   const {id, action, data} = event.data;

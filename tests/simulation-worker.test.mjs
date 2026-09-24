@@ -13,8 +13,8 @@ scope.importScripts=(...names)=>names.forEach(name=>vm.runInContext(readFileSync
 vm.runInContext(readFileSync(new URL('../public/evac-preview-worker.js',import.meta.url),'utf8'),scope);
 const request=(action,data)=>{messages.length=0;scope.self.onmessage({data:{id:1,action,data:structuredClone(data)}});const last=messages.at(-1);assert.ok(!last.error,last.error);assert.ok('value'in last);return last.value;};
 const plain=v=>JSON.parse(JSON.stringify(v));
-for(const preview of [false,true])for(const response of [false,true]){
-  const bfp=response?{station:[123.71327,10.50537],params:{callMin:0,turnoutMin:0}}:null;
+for(const preview of [false,true])for(const response of [0,1,10]){
+  const bfp=response?{station:[123.71327,10.50537],params:{callMin:0,turnoutMin:0,truckCount:response}}:null;
   request('prepare',{...data,preview,bfp});
   const actual=request('run',{index:0,seed:42,minutes:10,number:'1 of 1'});
   const truck=bfp?B.prepare({...data,station:bfp.station,params:bfp.params}).create():null;
@@ -25,4 +25,4 @@ for(const preview of [false,true])for(const response of [false,true]){
   if(!preview)assert.deepEqual(plain(actual.evac),plain(E.prepare(data).evaluate(expected.frames)),'original evacuation unchanged in worker');
   else assert.deepEqual(plain(actual.evac.preview.baseline),plain(E.prepare(data).evaluate(expected.frames).summary),'comparison uses the identical fire frames');
 }
-console.log('Worker parity passed in both routing modes, with and without BFP: identical fire frames, explanations, model metrics, response and original evacuation.');
+console.log('Worker parity passed in both routing modes, with zero, one and ten BFP trucks: identical fire frames, explanations, model metrics, response and original evacuation.');

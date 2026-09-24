@@ -7,16 +7,18 @@ const bui = {
   status: $('#bfp-status'), summary: $('#bfp-summary')
 };
 const BFP_FIELDS = [
+  ['truckCount', 'Number of fire trucks', 'vehicles', 1, 10, 1],
   ['callMin', 'Call received after', 'min', 0, 60, 0.5],
   ['turnoutMin', 'Crew turnout', 'min', 0, 15, 0.5],
   ['speedKmh', 'Truck speed', 'km/h', 5, 80, 1],
   ['reachM', 'Hose reach', 'm', 10, 200, 5],
-  ['perMin', 'Buildings put out per minute', '', 1, 10, 1]
+  ['perMin', 'Buildings put out per truck per minute', '', 1, 10, 1]
 ];
 let bfpStation = BFP_DEFAULT_STATION;
 let bfpPicking = false;
 let bfpShown = null; // timeline of the run on screen
 let bfpVisualsEmpty = false;
+let bfpStationLabel = '';
 
 function bfpSettings() { return {on: false, ...IgnisBFP.DEFAULTS, ...(scenario.bfp || {})}; }
 function renderBfpForm() {
@@ -34,7 +36,8 @@ bui.fields.addEventListener('change', e => {
   if (!f) return;
   const v = Number(e.target.value);
   if (!Number.isFinite(v) || v < f[3] || v > f[4]) { showHint(`${f[1]} must be from ${f[3]} to ${f[4]}.`, 6000); renderBfpForm(); return; }
-  scenario.bfp = {...bfpSettings(), [f[0]]: f[0] === 'perMin' ? Math.round(v) : v};
+  if (['perMin','truckCount'].includes(f[0]) && !Number.isInteger(v)) { showHint(`${f[1]} must be a whole number.`, 6000); renderBfpForm(); return; }
+  scenario.bfp = {...bfpSettings(), [f[0]]: v};
   saveScenario();
 });
 
@@ -54,8 +57,13 @@ async function initBfp() {
   map.addLayer({id: 'bfp-water-drops', type: 'circle', source: 'bfp-water', filter: ['==', ['geometry-type'], 'Point'],
     paint: {'circle-radius': ['interpolate', ['linear'], ['zoom'], 15, 1.5, 19, 4], 'circle-color': '#e1f5fe', 'circle-stroke-color': '#0288d1', 'circle-stroke-width': 1}});
   map.addSource('bfp-truck', {type: 'geojson', data: empty()});
-  map.addLayer({id: 'bfp-truck', type: 'symbol', source: 'bfp-truck', layout: {'icon-image': ['get', 'icon'], 'icon-allow-overlap': true, 'icon-ignore-placement': true,
-    'icon-size': ['interpolate', ['linear'], ['zoom'], 15, 0.5, 17, 0.75, 19, 1.1]}});
+  map.addLayer({id: 'bfp-truck', type: 'symbol', source: 'bfp-truck', filter:['==',['get','deployed'],true], layout: {
+    'icon-image': 'bfp-truck', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
+    'icon-rotate':['get','bearing'], 'icon-rotation-alignment':'map', 'icon-pitch-alignment':'map',
+    'icon-size': ['interpolate', ['linear'], ['zoom'], 15, 0.5, 17, 0.75, 19, 1.1],
+    'text-field':['to-string',['get','truckId']], 'text-font':['Noto Sans Bold'], 'text-size':10,
+    'text-allow-overlap':true, 'text-ignore-placement':true},
+    paint:{'text-color':'#fff','text-halo-color':'#7f1111','text-halo-width':1.5}});
   try {
     const stored = cloud.enabled ? await cloud.loadSetting('bfp_station') : JSON.parse(localStorage.getItem(BFP_STATION_KEY) || 'null');
     if (stored?.lonlat) bfpStation = stored;
@@ -64,6 +72,7 @@ async function initBfp() {
   renderBfpForm();
 }
 function showStation() {
+  bfpStationLabel = '';
   map.getSource('bfp-station')?.setData({type: 'FeatureCollection', features: [{type: 'Feature', geometry: {type: 'Point', coordinates: bfpStation.lonlat}, properties: {name: bfpStation.approximate ? 'BFP (approx.)' : 'BFP station'}}]});
   renderBfpForm();
 }
@@ -100,23 +109,22 @@ function prepareBfp(features, inputs) {
 
 // ---------- truck and water ----------
 function truckImages() {
-  const draw = mirror => {
-    const W = 44, H = 24, k = 2, c = document.createElement('canvas');
+  const draw = () => {
+    // Roof view, nose pointing north/up at zero rotation. MapLibre rotates this in the road plane.
+    const W = 24, H = 44, k = 2, c = document.createElement('canvas');
     c.width = W * k; c.height = H * k;
     const g = c.getContext('2d');
     g.scale(k, k);
-    if (mirror) { g.translate(W, 0); g.scale(-1, 1); }
     g.lineJoin = 'round';
-    g.fillStyle = '#c62828'; g.strokeStyle = '#3e0a0a'; g.lineWidth = 1.5;
-    g.beginPath(); g.rect(2, 6, 28, 12); g.fill(); g.stroke();                       // body
-    g.beginPath(); g.moveTo(30, 18); g.lineTo(30, 8); g.lineTo(37, 8); g.lineTo(42, 13); g.lineTo(42, 18); g.closePath(); g.fill(); g.stroke(); // cab
-    g.fillStyle = '#bbdefb'; g.fillRect(32, 9.5, 5, 4);                              // window
-    g.strokeStyle = '#eceff1'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(4, 5); g.lineTo(28, 2); g.stroke(); // ladder
-    for (let x = 7; x < 28; x += 5) { g.beginPath(); g.moveTo(x, 4.6); g.lineTo(x, 3); g.stroke(); }
-    g.fillStyle = '#fff'; g.fillRect(4, 11, 24, 2);                                 // stripe
-    g.fillStyle = '#212121';
-    for (const x of [9, 24, 36]) { g.beginPath(); g.arc(x, 19, 3.2, 0, Math.PI * 2); g.fill(); }
-    g.fillStyle = '#ffeb3b'; g.fillRect(33, 5.5, 3, 2);                             // light
+    g.fillStyle = '#17232e';
+    for (const x of [1,19]) for (const y of [8,29,35]) g.fillRect(x,y,4,6);
+    g.fillStyle = '#d62c2c'; g.strokeStyle = '#fff'; g.lineWidth = 1.4;
+    g.beginPath();g.roundRect(4,2,16,40,3);g.fill();g.stroke();
+    g.fillStyle = '#a9e2ff';g.fillRect(6,5,12,5); // windshield near the front
+    g.fillStyle = '#fff';g.fillRect(5,13,14,2);g.fillRect(6,2,3,2);g.fillRect(15,2,3,2);
+    g.fillStyle = '#287eff';g.fillRect(6,11,5,2);g.fillStyle = '#ffec69';g.fillRect(13,11,5,2);
+    g.strokeStyle = '#f2f5f7';g.lineWidth = 1.4;
+    g.strokeRect(8,26,8,13);for(let y=28;y<39;y+=3){g.beginPath();g.moveTo(8,y);g.lineTo(16,y);g.stroke();}
     return g.getImageData(0, 0, W * k, H * k);
   };
   const station = (() => {
@@ -129,12 +137,13 @@ function truckImages() {
     g.fillStyle = '#fff'; g.font = 'bold 9px system-ui, sans-serif'; g.textAlign = 'center'; g.fillText('BFP', 15, 23);
     return g.getImageData(0, 0, S * k, S * k);
   })();
-  return [['bfp-truck', draw(false)], ['bfp-truck-l', draw(true)], ['bfp-station', station]];
+  return [['bfp-truck', draw()], ['bfp-station', station]];
 }
 function bfpShow(r, features) {
   bfpVisualsEmpty = false;
   bfpShown = r?.bfp ? {tl: r.bfp, features} : null;
-  map.getSource('bfp-route')?.setData({type: 'FeatureCollection', features: bfpShown ? bfpShown.tl.drives.map(d => ({type: 'Feature', geometry: {type: 'LineString', coordinates: d.coords}, properties: {}})) : []});
+  if (!bfpShown) showStation();
+  map.getSource('bfp-route')?.setData({type: 'FeatureCollection', features: bfpShown ? bfpShown.tl.drives.filter(d=>d.coords.length>1).map(d => ({type: 'Feature', geometry: {type: 'LineString', coordinates: d.coords}, properties: {truckId:d.truckId??1}})) : []});
   bui.status.hidden = !bfpShown;
   bfpTick(0);
 }
@@ -146,11 +155,17 @@ function bfpTick(minute) {
     return;
   }
   bfpVisualsEmpty = false;
-  const tl = bfpShown.tl, t = IgnisBFP.truckAt(tl, minute);
-  map.getSource('bfp-truck').setData({type: 'FeatureCollection', features: [{type: 'Feature', geometry: {type: 'Point', coordinates: t.at}, properties: {icon: t.dir < 0 ? 'bfp-truck-l' : 'bfp-truck'}}]});
+  const tl = bfpShown.tl, trucks = IgnisBFP.trucksAt(tl, minute);
+  map.getSource('bfp-truck').setData({type: 'FeatureCollection', features: trucks.map(t=>({type: 'Feature', geometry: {type: 'Point', coordinates: t.at}, properties: {truckId:t.truckId,bearing:t.bearing,deployed:t.deployed}}))});
+  const waiting = trucks.filter(t=>!t.deployed).length;
+  const stationLabel = `BFP station${waiting?` · ${waiting} ${waiting===1?'truck':'trucks'} waiting`:''}`;
+  if (stationLabel !== bfpStationLabel) {
+    bfpStationLabel = stationLabel;
+    map.getSource('bfp-station')?.setData({type:'FeatureCollection',features:[{type:'Feature',geometry:{type:'Point',coordinates:tl.station},properties:{name:stationLabel}}]});
+  }
   const water = [];
   for (const s of tl.sprays) {
-    if (minute < s.minute || minute >= s.minute + 1.2) continue;
+    if (minute < s.minute || minute >= s.minute + 1) continue;
     const to = bldgCentre(bfpShown.features[s.target]);
     water.push({type: 'Feature', geometry: {type: 'LineString', coordinates: [s.at, to]}, properties: {}});
     for (let k = 0; k < 6; k++) { // drops travelling along the jet
@@ -160,20 +175,19 @@ function bfpTick(minute) {
   }
   map.getSource('bfp-water').setData({type: 'FeatureCollection', features: water});
   const fmt = m => `${Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')}`;
-  const P = bfpSettings(), call = P.callMin, leave = tl.dispatch ?? call + P.turnoutMin, first = tl.arrivals[0]?.minute;
-  bui.status.textContent = minute < call ? `BFP: not yet called (call at ${fmt(call)})`
-    : minute < leave ? `BFP: call received at ${fmt(call)} — crew getting the truck ready`
-    : first === undefined ? 'BFP: the truck could not find an open road to the fire'
-    : minute < first ? `BFP: truck on the way (left ${fmt(leave)}, arrives ${fmt(first)})`
-    : t.state === 'spraying' ? `BFP: spraying water · ${tl.sprays.filter(s => s.minute <= minute).length} buildings put out`
-    : t.state === 'driving' ? 'BFP: moving to the next part of the fire'
-    : `BFP: standing by · ${tl.sprays.filter(s => s.minute <= minute).length} buildings put out`;
+  const P = tl.params ?? bfpSettings(), call = P.callMin, leave = tl.dispatch ?? call + P.turnoutMin;
+  const count = state => trucks.filter(t=>t.state===state).length;
+  const states = [['driving','on the road'],['spraying','spraying'],['standby','standing by'],['station','at station'],['blocked','waiting for access']]
+    .filter(([state])=>count(state)).map(([state,label])=>`${count(state)} ${label}`).join(' · ');
+  bui.status.textContent = `BFP · ${trucks.length} ${trucks.length===1?'truck':'trucks'}: ` + (minute < call ? `call at ${fmt(call)}`
+    : minute < leave ? `crews preparing · first departure ${fmt(leave)}`
+    : `${states} · ${tl.sprays.filter(s=>s.minute<=minute).length} buildings put out`);
 }
 function bfpSummaryHtml(r, noBfpIgnited) {
   if (!r.bfp) return '';
-  const tl = r.bfp, fmt = m => `${Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')}`, P = bfpSettings();
+  const tl = r.bfp, fmt = m => `${Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')}`, P = tl.params ?? r.calculation?.bfp ?? bfpSettings();
   const ignited = r.result.frames.at(-1).states.filter(s => s > 0).length;
   const first = tl.arrivals[0];
-  return `<b>BFP response</b> (optional, not part of the paper's model): call at ${fmt(P.callMin)}, truck left ${fmt(tl.dispatch ?? P.callMin + P.turnoutMin)}${first ? `, first on scene ${fmt(first.minute)} (${Math.round(first.gap)} m from the flames)` : ', never reached the fire'}; ${tl.extinguished} buildings put out.
+  return `<b>BFP response · ${tl.truckCount??1} ${(tl.truckCount??1)===1?'truck':'trucks'}</b> (optional, not part of the paper's model): capacity ${P.perMin} buildings per truck per minute; call at ${fmt(P.callMin)}, first departure ${fmt(tl.dispatch ?? P.callMin + P.turnoutMin)}${first ? `, first on scene ${fmt(first.minute)} (${Math.round(first.gap)} m from the flames)` : ', never reached the fire'}; ${tl.extinguished} buildings put out.
     Same fire and replay number <b>without</b> the BFP: ${noBfpIgnited.toLocaleString()} buildings caught fire; <b>with</b> it: ${ignited.toLocaleString()}.${tl.notes.length ? ` <span class="muted">${tl.notes[0]}</span>` : ''}`;
 }

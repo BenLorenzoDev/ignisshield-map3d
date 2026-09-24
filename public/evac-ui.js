@@ -123,7 +123,7 @@ async function prepareEvac(features, inputs, households) {
   const data = {features, inputs, densities: inputs.map(m => m.bldg_dens), households, roads, paths: fieldPaths(), safePoints: safeAreas, water: waterPolys,
     preview: surveyPreview.checked, bfp: settings.on ? {station: bfpStation.lonlat, params: settings} : null};
   {
-    const worker = new Worker('evac-preview-worker.js?v=20260924-smooth4'), pending = new Map();
+    const worker = new Worker('evac-preview-worker.js?v=20260924-fleet2'), pending = new Map();
     let sequence = 0;
     const dispose = () => { worker.terminate(); for (const p of pending.values()) p.reject(new Error('Preview stopped.')); pending.clear(); };
     worker.onmessage = ({data: message}) => {

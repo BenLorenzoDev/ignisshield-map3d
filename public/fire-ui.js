@@ -61,6 +61,7 @@ function renderSim() {
   simNote.textContent = x <= 1
     ? `Plays in real time: people walk at their true pace and the ${scenario.minutes}-minute fire takes ${scenario.minutes} minutes to watch.`
     : `Plays ${x}× faster than real time: the ${scenario.minutes}-minute fire takes about ${watch < 1 ? Math.round(watch * 60) + ' seconds' : Math.round(watch * 10) / 10 + ' minutes'} to watch.`;
+  simNote.textContent += ' Playback slows on busy devices to keep each fire step visible.';
 }
 simMinutes.addEventListener('change', () => {
   const n = Number(simMinutes.value);
@@ -219,9 +220,13 @@ const HELP = {
     get: 'White figures represent groups walking to safety. Map labels say how many people reached safety, have no safe route, or have an unknown path. The bottom panel counts everyone, including groups whose labels overlap and are hidden. These are not death counts. Solid green lines follow mapped roads; dashed links are assumed connections where the actual alley is unknown and may cross houses.',
     sim: 'Each family steps out of its door onto the nearest road or alley it can reach without crossing water or passing a burning house, then walks the network (roads plus the alleys from the GPS walks). They see where the fire is: streets beside burning buildings are closed, streets within 30 m of the fire are avoided, and every minute they check the way ahead — if the fire has blocked it, they turn back or take another street. It does not change the fire. Times assume people leave at once and walk at 4.5 km/h; no crowding, so real evacuations are slower.'},
   bfp: {title: 'BFP fire truck response (optional)',
-    what: 'Adds the Bureau of Fire Protection: the station receives the call, a truck drives there on roads wide enough for it, parks near the fire and sprays water. The students’ paper model does not include this; leave it unticked for the paper’s runs.',
-    get: 'Set the call and turnout times, truck speed, hose reach and how many burning buildings the crew can put out per minute (draft values; ask the BFP for real ones). Editors set the station location once (it starts at an approximate spot).',
+    what: 'Adds the Bureau of Fire Protection: the station receives the call and sends the selected number of trucks. Each drives on truck-usable roads, parks near the fire and sprays its own targets. The students’ paper model does not include this; leave it unticked for the paper’s runs.',
+    get: 'Choose the number of actual trucks separately from each truck’s capacity. Call and turnout times, speed, hose reach and suppression capacity are draft assumptions. Editors set the station location.',
     sim: 'The truck uses the fire-truck road rules (width, access, one-way) and avoids streets beside the flames. It parks at the reachable road point closest to the fire, at least 10 m away, puts out the nearest burning buildings within reach and wets the others within reach so they catch 4× less easily. When nothing burns within reach it drives to the next part of the fire. The results compare the same fire with and without the BFP.'},
+  'bfp-truckCount': {title: 'Number of fire trucks',
+    what: 'The actual number of separate trucks in the response, from 1 to 10. Each numbered vehicle has its own road route, arrival time and water targets.',
+    get: 'Use the number of trucks available for this scenario. This is separate from buildings put out per truck per minute.',
+    sim: 'Trucks leave the same station six seconds apart, seek separate stand-by positions at least 8 m apart, and do not count the same extinguished building twice. Overlapping wetting does not multiply protection. These are fleet assumptions, not traffic or water-supply simulation.'},
   'bfp-callMin': {title: 'Call received after',
     what: 'Minutes from the first flame until the BFP receives the call: someone notices the fire, finds a phone and reports it.',
     get: 'Ask the BFP for their typical reporting delay in Sitio Polo. 3 minutes is a draft value; night-time fires are often reported later.',
@@ -229,7 +234,7 @@ const HELP = {
   'bfp-turnoutMin': {title: 'Crew turnout',
     what: 'Minutes from receiving the call until the truck leaves the station (crew gets dressed and aboard).',
     get: 'BFP stations aim for about 1 minute; ask the Balamban station.',
-    sim: 'The truck leaves the station at call + turnout.'},
+    sim: 'The first truck leaves at the first model step at or after call + turnout. Additional trucks are queued six seconds apart.'},
   'bfp-speedKmh': {title: 'Truck speed',
     what: 'Average driving speed of the fire truck on open roads.',
     get: '30 km/h is a draft for town streets; narrow or crowded roads are slower automatically.',
@@ -238,7 +243,7 @@ const HELP = {
     what: 'How far from the parked truck the crew can bring water: hose length plus the water jet.',
     get: 'A few hose lengths of about 15–20 m each plus the jet; ask the BFP. 60 m is a draft value.',
     sim: 'Only burning buildings within this distance of the truck can be put out; safe buildings within it are wetted and catch 4× less easily.'},
-  'bfp-perMin': {title: 'Buildings put out per minute',
+  'bfp-perMin': {title: 'Buildings put out per truck per minute',
     what: 'How many burning buildings the crew can put out each minute while spraying.',
     get: 'Depends on water supply and hose lines; 1 per minute is a draft for one truck.',
     sim: 'Each minute the nearest burning buildings within reach are put out (they turn blue-grey and stop spreading fire).'},
@@ -253,7 +258,7 @@ const HELP = {
   speed: {title: 'Playback speed',
     what: 'How fast the simulated time plays on screen. The simulation itself always uses real minutes; this only changes how quickly you watch it.',
     get: '“Real time” shows people walking at their true pace (about 1.25 m/s) — a 60-minute fire then takes an hour to watch. 30× shows one simulated minute every 2 seconds, good for following people; 120× or more to see the whole fire spread quickly.',
-    sim: 'The clock shows simulated minutes and seconds and the current speed-up, so a person crossing 100 m in a few seconds on screen is really walking for about a minute and a half.'},
+    sim: 'The clock shows simulated minutes and seconds. On a busy device, playback slows to show every recorded fire step instead of jumping ahead; the calculated results stay the same.'},
   boundary: {title: 'Only buildings inside the study boundary',
     what: 'Limits the fire to the buildings inside the red dashed line, the study area of Sitio Polo.',
     get: 'Tick it for results about Sitio Polo only. Untick it to let the fire reach every mapped building around.',
@@ -587,6 +592,7 @@ async function startFire() {
         evac_routing: evacCtx?.preview ? 'surveyed alley preview' : 'original',
         evac_people: es?.people ?? '', evac_reached_safety: es?.safe ?? '', evac_no_safe_route: es?.trapped ?? '', evac_no_mapped_path: es?.nopath ?? '',
         bfp_response: timeline ? 'on' : 'off', bfp_first_on_scene_min: timeline?.arrivals[0] ? +timeline.arrivals[0].minute.toFixed(2) : '',
+        bfp_trucks: timeline?.truckCount ?? (timeline?1:0), bfp_buildings_per_truck_min: timeline?.params?.perMin ?? '',
         bfp_buildings_put_out: timeline ? timeline.extinguished : '', bfp_ignited_without: noBfpIgnited ?? '',
         evac_avg_min: es ? +es.avgMin.toFixed(2) : '', evac_max_min: es ? +es.maxMin.toFixed(2) : '', safe_areas: safeAreas.map(s => s.name).join('; '),
         status: result.status, model: result.model, calc_s: result.metrics.Total_Simulation_Time_Sec
@@ -660,6 +666,8 @@ fui.batchRun.addEventListener('change', () => showRun(fui.batchRun.value));
 // model gives it (ignition minute to burned-out minute). Flames and smoke are GPU sprites (fire-gl.js); the ground
 // glow and the red/orange pulse of burning buildings are map layers.
 let displayMinute = 0, clock = 0, lastTs = 0, lastPaint = 0, rafId = null;
+let playbackRendered = false;
+map.on('render', () => { playbackRendered = true; });
 let lastVisualMinute = NaN, lastVisualClock = NaN, lastVisualView = '', paintPending = false;
 /** Simulated time as mm:ss, and how much faster than real time it plays. */
 function showClock() {
@@ -714,6 +722,7 @@ function shapeOf(i) {
 }
 
 function showFrame(k) {
+  playbackRendered = false;
   frameIndex = k;
   const frames = run.result.frames, states = frames[k].states, minute = frames[k].minute, {ig, out, dur} = run.fx;
   const flames = [], points = [], smoky = [];
@@ -745,6 +754,7 @@ function showFrame(k) {
   showClock();
   fui.status.textContent = `${row.Burning} burning · ${row.Burned} burned${row.Extinguished ? ` · ${row.Extinguished} put out` : ''}${k === frames.length - 1 ? ` · ${run.result.status}` : ''}`;
   if (k === frames.length - 1) setResults(true);
+  else if (!fui.results.hidden) setResults(false);
   activity.render(run, k);
   activity.status(displayMinute, Boolean(playTimer));
   paintFire();
@@ -770,10 +780,12 @@ function loop(ts) {
   rafId = requestAnimationFrame(loop);
   const dt = lastTs && !document.hidden ? Math.max(0, (ts - lastTs) / 1000) : 0;
   lastTs = ts;
-  if (playTimer) clock += dt;
+  if (playTimer) clock += Math.min(dt, 0.1);
   if (playTimer) {
     const end = run.result.frames.length - 1;
-    displayMinute = Math.min(end, displayMinute + dt * Number(fui.speed.value));
+    const next = IgnisPlayback.advance(displayMinute, dt, Number(fui.speed.value), end, playbackRendered);
+    if (next !== displayMinute) playbackRendered = false;
+    displayMinute = next;
     const k = Math.floor(displayMinute);
     if (k !== frameIndex) showFrame(k);
     if (displayMinute >= end) pause();

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>IgnisShield Map 3D</title>
   <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
-  <link rel="stylesheet" href="styles.css?v=20260924-students1">
+  <link rel="stylesheet" href="styles.css?v=20260925-decisions1">
 </head>
 <body class="loading">
   <div id="map"></div>
@@ -303,6 +303,7 @@
     </div>
     <div id="results" hidden>
       <div class="row results-toolbar"><button id="view-calculations" class="primary-soft">View calculations</button><button id="results-close" aria-label="Close results to inspect map">Close results ×</button></div>
+      <p class="history-hint">Click a house on the map to see when it caught fire and why.</p>
       <div id="result-headline"></div>
       <div id="evac-summary" data-info="evac" hidden></div>
       <div id="bfp-summary" data-info="bfp" hidden></div>
@@ -312,7 +313,7 @@
         <ul id="output-notes" class="muted small"></ul>
       </details>
     </div>
-    <div id="results-closed" class="row" hidden><span>Run finished · Explore the affected buildings on the map.</span><button id="results-reopen" class="primary-soft">Show results</button></div>
+    <div id="results-closed" class="row" hidden><span>Run finished · Click a house for its fire history.</span><button id="results-reopen" class="primary-soft">Show results</button></div>
   </div>
 
   <dialog id="calculation-dialog" aria-labelledby="calculation-title">
@@ -324,7 +325,7 @@
   <script src="vendor/supabase/supabase.js"></script>
   <script src="config.js"></script>
   <script src="cloud.js"></script>
-  <script src="fire.js?v=20260924-activity1"></script>
+  <script src="fire.js?v=20260925-decisions1"></script>
   <script src="paper.js?v=20260924-students1"></script>
   <script src="calculation-report.js?v=20260924-students1"></script>
   <script src="routing.js"></script>
@@ -337,13 +338,14 @@
   <script src="wind-ui.js?v=20260924-lowpower1"></script>
   <script src="field.js"></script>
   <script src="performance.js?v=20260924-lowpower1"></script>
-  <script src="app.js?v=20260924-lowpower1"></script>
+  <script src="app.js?v=20260924-history1"></script>
   <script src="playback.js?v=20260924-playback1"></script>
-  <script src="fire-ui.js?v=20260924-students1"></script>
-  <script src="activity-ui.js?v=20260924-students1"></script>
+  <script src="fire-ui.js?v=20260924-history1"></script>
+  <script src="building-history.js?v=20260925-decisions1"></script>
+  <script src="activity-ui.js?v=20260925-decisions1"></script>
   <script src="route-ui.js"></script>
   <script src="paths-ui.js?v=20260924-survey3"></script>
-  <script src="evac-ui.js?v=20260924-students1"></script>
+  <script src="evac-ui.js?v=20260925-decisions1"></script>
   <script src="bfp-ui.js?v=20260924-fleet2"></script>
   <script src="performance-ui.js?v=20260924-lowpower1"></script>
   <script src="cloud-ui.js"></script>

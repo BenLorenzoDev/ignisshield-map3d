@@ -547,6 +547,15 @@ fui.logCsv.addEventListener('click', () => {
 let run = null;   // run being shown: {id, result, features, ids}
 let fireStarting = false;
 function buildingSelectionLocked() { return fireStarting || run !== null; }
+function canInspectBuildingResults() {
+  return Boolean(run && !fireStarting && !playTimer && displayMinute >= run.result.frames.at(-1).minute);
+}
+function inspectBuildingResult(id) {
+  if (!canInspectBuildingResults()) return;
+  resultsDismissed = true;
+  setResults(false);
+  activity.inspect(id);
+}
 let shown = null; // fire state currently drawn for each building
 let frameIndex = 0;
 let playTimer = null; // truthy while playing (route-ui checks it)

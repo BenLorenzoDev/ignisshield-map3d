@@ -132,7 +132,7 @@ async function prepareEvac(features, inputs, households) {
   const data = {features, inputs, densities: inputs.map(m => m.bldg_dens), households, roads, paths: fieldPaths(), safePoints: safeAreas, water: waterPolys,
     routingMode: 'obstacle-aware', bfp: settings.on ? {station: bfpStation.lonlat, params: settings} : null};
   {
-    const worker = new Worker('evac-preview-worker.js?v=20260924-routes1'), pending = new Map();
+    const worker = new Worker('evac-preview-worker.js?v=20260925-decisions1'), pending = new Map();
     let sequence = 0;
     const dispose = () => { worker.terminate(); for (const p of pending.values()) p.reject(new Error('Simulation preparation stopped.')); pending.clear(); };
     worker.onmessage = ({data: message}) => {

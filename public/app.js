@@ -501,7 +501,11 @@ map.on('click', e => {
     return;
   }
   if (typeof buildingSelectionLocked === 'function' && buildingSelectionLocked()) {
-    showHint('Clear the current fire before selecting another building.', 3000);
+    if (canInspectBuildingResults()) {
+      const layers = view === '3d' ? ['buildings-3d'] : ['buildings-2d'];
+      const hit = map.queryRenderedFeatures(e.point, {layers})[0];
+      if (hit) inspectBuildingResult(hit.properties.id);
+    } else showHint('Building details become available when playback finishes. Clear the fire to choose a new starting house.', 3500);
     return;
   }
   const editLayers = view === '3d' ? ['edit-3d'] : ['edit-vertex', 'edit-mid', 'edit-fill'];

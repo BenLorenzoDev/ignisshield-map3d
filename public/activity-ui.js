@@ -6,11 +6,16 @@ const activity = (() => {
   let current = null, busy = false, lastStatus = '', links = [], linkMinute = 0, focused = null;
   let linkCanvas = null;
   let lastLinksKey = '', lastMinute = 0;
+  let inspectedId = null;
+  const title = $('#activity-title'), note = panel.querySelector('.activity-playback-note');
   map.on('move', () => drawLinks(lastMinute));
   const centres = new Map();
   SIDE.activity = [toggle, panel];
   toggle.addEventListener('click', () => openSide('activity'));
-  $('#activity-close').addEventListener('click', () => { panel.hidden = true; toggle.setAttribute('aria-pressed', 'false'); });
+  $('#activity-close').addEventListener('click', () => {
+    panel.hidden = true; toggle.setAttribute('aria-pressed', 'false');
+    if (inspectedId !== null) { focused = null; lastLinksKey = ''; drawLinks(lastMinute); }
+  });
   new ResizeObserver(() => {
     document.documentElement.style.setProperty('--activity-playback-height', `${$('#playback').getBoundingClientRect().height}px`);
   }).observe($('#playback'));
@@ -64,6 +69,13 @@ const activity = (() => {
 
   function render(r, k) {
     if (busy || r !== current) return;
+    if (inspectedId !== null && k === r.result.frames.length - 1) {
+      if (!panel.hidden) inspect(inspectedId);
+      return;
+    }
+    inspectedId = null;
+    title.textContent = 'Live activity';
+    note.textContent = 'Updates with playback · recorded model decisions';
     const steps = r.result.explanations, previous = steps?.[k - 1], next = steps?.[k];
     if (!steps) {
       body.innerHTML = '<p>Detailed explanations are not available for this older run. Start a new run to record ignition chances and reasons.</p>';
@@ -98,6 +110,66 @@ const activity = (() => {
     ${history.length ? `<section class="activity-history"><h3>Earlier</h3><ol>${history.join('')}</ol></section>` : ''}
     <p class="activity-footnote">The model uses ignition chances, not nearest-house order. A farther house can ignite while a nearer one does not. Amber links show calculated exposure; ember flight is not simulated.</p>`;
     panel.scrollTop = 0; // each new playback step starts with the latest update in view
+  }
+
+  function inspect(buildingId) {
+    if (!current) return;
+    inspectedId = buildingId;
+    const h = IgnisBuildingHistory.read(current, buildingId);
+    title.textContent = 'Building details';
+    note.textContent = 'Saved run history · times measured from the start of the fire';
+    open();
+    const back = '<button class="history-back" data-history-back>Back to live activity</button>';
+    if (!h) {
+      body.innerHTML = `<p>This building was not included in this run. No fire outcome was calculated for it.</p>${back}`;
+      focused = null; links = []; lastLinksKey = ''; drawLinks(lastMinute);
+      return;
+    }
+    const stamp = m => { const s = Math.round(m * 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2,'0')}`; };
+    const labels = ['Did not ignite', 'Still burning at the end', 'Burned out', 'Put out by BFP'];
+    const skipped = {
+      'unavailable':'This house did not ignite. This older run did not save all non-ignition decisions, so a specific reason cannot be established. Start a new run to record them.',
+      'not-assessed':'No burning neighbor was assessed for this house during the run under the model’s 60 m gap rule. This is not evidence that a wall shielded it.',
+      'zero-chance':'The model assessed this house, but its calculated ignition chance was zero at every check. This does not mean the actual building is fireproof.',
+      'draw-not-triggered':'This house was exposed in the model, but the saved random decision did not trigger ignition at any assessed step. It was not deliberately skipped in favor of a farther house.'
+    };
+    const decision = h.exposure ? {...h.exposure,...h.interval} : h.peak;
+    const why = h.origin ? 'This is the starting house selected by the user. Its fire begins at 0:00.'
+      : h.ignitedAt === null ? skipped[h.nonIgnition]
+      : h.exposure ? reason(h.exposure) + (h.exposure.sourceCount > 1 ? ` It was exposed to ${h.exposure.sourceCount} burning buildings in that step.` : '')
+      : 'The run recorded when this house ignited, but did not save a detailed explanation for that event.';
+    const row = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
+    const stopped = h.finalState === 3 ? 'Put out by BFP' : 'Burned out';
+    body.innerHTML = `<section class="activity-latest building-history" aria-label="Building history">
+      <div class="activity-latest-label">${h.origin ? 'Selected starting house' : 'Recorded building outcome'}</div>
+      <h3>${name(h.index)}</h3><p class="history-outcome" data-state="${h.finalState}">${labels[h.finalState]}</p>
+      <dl>${row('Fire started', h.ignitedAt === null ? 'Did not ignite' : stamp(h.ignitedAt))}
+      ${h.stoppedAt !== null ? row(stopped, stamp(h.stoppedAt)) : ''}
+      ${h.burningMinutes !== null ? row(h.stoppedAt === null ? 'Burning time observed' : 'Time burning', `${stamp(h.burningMinutes)} (min:sec)`) : ''}
+      ${row('Run ended', stamp(h.end))}</dl>
+    </section>
+    <section class="history-material" aria-label="Material used in this run"><h3>Material used in this run</h3>
+      <p><b>${esc(h.material.label)}</b> <span class="history-assumption">${h.material.assumed ? 'Assumed' : 'Unverified'}</span></p>
+      <p>${h.material.fuelLoad === null ? 'Fuel load was not saved.' : `Fuel load: <b>${h.material.fuelLoad} MJ/m²</b>.`} ${esc(h.material.source)}.</p>
+      <small>${h.material.verification}. The class is inferred from fuel load; a traced roof does not identify its materials.</small>
+    </section>
+    <section class="history-reason"><h3>${h.ignitedAt === null ? 'Why it did not ignite' : 'Why the model ignited it'}</h3><p>${why}</p>
+      ${h.ignitedAt === null && h.peak ? `<p><b>Highest-chance step: ${stamp(h.peak.from)}–${stamp(h.peak.to)}.</b> ${reason(h.peak)}</p>` : ''}
+      ${h.interval ? `<p class="activity-secondary">Ignition recorded in the ${stamp(h.interval.from)}–${stamp(h.interval.to)} model step.</p>` : ''}
+      ${h.exposure ? '<p class="activity-secondary">The source shown contributed the strongest exposure; it is not proof of a specific real-world ignition mechanism.</p>' : ''}
+      ${h.finalState === 1 ? '<p class="activity-secondary">The run stopped while this house was still burning. Its eventual burnout time was not observed.</p>' : ''}
+    </section>
+    ${decision && Number.isFinite(decision.draw) ? `<details class="history-decisions"><summary>Recorded ignition decision</summary>
+      <p>Ignition occurs only when the saved random number is <b>below</b> the ignition probability. Both numbers use the 0–1 scale.</p>
+      <dl>${row('Probability', String(decision.probability))}${row('Saved random number', String(decision.draw))}
+      ${row('Outcome',decision.draw < decision.probability ? 'Ignited' : 'Did not ignite')}</dl>
+      <p>These are the original numbers from the simulation, not a new random decision.</p></details>` : ''}
+    ${h.checks.length ? `<details class="history-decisions"><summary>All recorded checks (${h.checks.length})</summary><table>
+      <thead><tr><th>Model step</th><th>Chance</th><th>Decision</th></tr></thead><tbody>${h.checks.map(c=>`<tr><td>${stamp(c.from)}–${stamp(c.to)}</td><td>${esc(pct(c.probability))}</td><td>${c.ignited?'Ignited':'Did not ignite'}</td></tr>`).join('')}</tbody></table></details>` : ''}
+    ${decision ? `<button class="activity-locate" data-building="${decision.sourceId}" aria-label="Locate strongest exposure source">Locate source: ${name(decision.sourceId)} ↗</button>` : ''}
+    ${back}<p class="activity-footnote">Recorded model predictions. A farther house can ignite before a nearer one. This model does not calculate shielding by intervening buildings, accumulated heat, or ember flight.</p>`;
+    focused = {id:h.index, sourceId:decision?.sourceId};
+    lastLinksKey = ''; drawLinks(lastMinute); panel.scrollTop = 0;
   }
 
   function status(minute, playing) {
@@ -155,6 +227,9 @@ const activity = (() => {
   }
 
   function clear() {
+    inspectedId = null;
+    title.textContent = 'Live activity';
+    note.textContent = 'Updates with playback · recorded model decisions';
     current = null; busy = false; panel.hidden = true; panel.removeAttribute('aria-busy');
     toggle.setAttribute('aria-pressed', 'false');
     linkCanvas?.remove(); linkCanvas = null; links = []; focused = null; centres.clear();
@@ -171,6 +246,9 @@ const activity = (() => {
   }
 
   body.addEventListener('click', event => {
+    if (event.target.closest('[data-history-back]') && current) {
+      inspectedId = null; render(current, current.result.frames.length - 1); drawLinks(lastMinute); return;
+    }
     const button = event.target.closest('[data-building]');
     if (!button || !current) return;
     const id = Number(button.dataset.building), ring = current.features[id].geometry.coordinates[0];
@@ -183,5 +261,5 @@ const activity = (() => {
     drawLinks(lastMinute);
   });
 
-  return {stage, show, render, status, clear, fail};
+  return {stage, show, render, status, clear, fail, inspect};
 })();

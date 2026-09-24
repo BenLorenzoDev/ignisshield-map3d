@@ -181,6 +181,7 @@
       }
       const nextMinute = this.minute + dt;
       const assessed = [];
+      const decisions = []; // observation only: keep every assessed target, including non-ignitions
       for (const targetId of [...hazards.keys()].sort((a, b) => a - b)) {
         const probability = 1 - Math.exp(-hazards.get(targetId) * dt);
         const draw = this.rng.random(); // exactly the same single draw, in the same target order
@@ -193,6 +194,7 @@
             windFactor: Math.exp(Math.min(2, 0.9 * v.wind_spd / 30) * Math.cos(bearing - toward)),
             protection: this.protect?.get(targetId) ?? 1};
           assessed.push(explanation);
+          decisions.push(targetId, probability, draw, c.sourceId, c.gap, c.count, explanation.windFactor, explanation.protection);
         }
         if (draw < probability) {
           this.states.set(targetId, 'burning');
@@ -208,6 +210,10 @@
       }
       if (detail) {
         detail.checked = assessed.length;
+        // Compact rows: target, probability, existing RNG draw, strongest source, gap,
+        // source count, wind factor, protection. Never consume another random number.
+        detail.decisions = Float64Array.from(decisions);
+        detail.decisionFormat = 1;
         detail.top = assessed.sort((a, b) => b.probability - a.probability || a.id - b.id).slice(0, 3);
         this.explanations.push(detail);
       }

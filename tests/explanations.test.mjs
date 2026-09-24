@@ -27,6 +27,19 @@ for (const suppression of [false, true]) {
     assert.equal(step.from, k); assert.equal(step.to, k + 1);
     assert.ok(step.top.length <= 3);
     assert.ok(step.top.every((e, i, a) => !i || a[i - 1].probability >= e.probability));
+    assert.equal(step.decisionFormat,1);
+    assert.equal(step.decisions.length,step.checked*8,'save every check, including targets outside the top three');
+    const recorded=new Set();
+    for(let j=0;j<step.decisions.length;j+=8){
+      const [id,probability,draw,sourceId,gap,count,wind,protection]=step.decisions.slice(j,j+8);
+      assert.ok(!recorded.has(id)); recorded.add(id);
+      assert.equal(traced.frames[k][id],'safe');
+      assert.equal(traced.frames[k][sourceId],'burning');
+      assert.ok(!step.extinguished.includes(sourceId));
+      assert.ok(probability>=0&&probability<=1&&draw>=0&&draw<1);
+      assert.ok(gap>=0&&count>=1&&wind>0&&protection>=0);
+      assert.equal(step.ignited.some(e=>e.id===id),draw<probability,'stored draw explains the actual ignition or non-ignition');
+    }
     const changed = traced.frames[k + 1].flatMap((s, id) => s === 'burning' && traced.frames[k][id] === 'safe' ? [id] : []);
     assert.deepEqual(step.ignited.map(e => e.id), changed);
     for (const e of [...step.top, ...step.ignited]) {

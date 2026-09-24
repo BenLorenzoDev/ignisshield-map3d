@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "vendor": "node scripts/vendor.mjs",
-    "test": "node tests/paper.test.mjs && node tests/calculation-report.test.mjs && node tests/explanations.test.mjs && node tests/network.test.mjs && node tests/field.test.mjs && node tests/evac.test.mjs && node tests/walk-space.test.mjs && node tests/evac-playback.test.mjs && node tests/playback.test.mjs && node tests/simulation-worker.test.mjs && node tests/bfp.test.mjs && node tests/bfp-fleet.test.mjs && node tests/parity.mjs && node tests/routing-parity.mjs",
+    "test": "node tests/paper.test.mjs && node tests/calculation-report.test.mjs && node tests/explanations.test.mjs && node tests/network.test.mjs && node tests/field.test.mjs && node tests/evac.test.mjs && node tests/walk-space.test.mjs && node tests/evac-playback.test.mjs && node tests/playback.test.mjs && node tests/performance.test.mjs && node tests/simulation-worker.test.mjs && node tests/bfp.test.mjs && node tests/bfp-fleet.test.mjs && node tests/parity.mjs && node tests/routing-parity.mjs",
     "test:paper": "node tests/paper.test.mjs",
     "test:report": "node tests/calculation-report.test.mjs",
     "test:parity": "node tests/parity.mjs",

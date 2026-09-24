@@ -538,7 +538,6 @@ let shown = null; // fire state currently drawn for each building
 let frameIndex = 0;
 let playTimer = null; // truthy while playing (route-ui checks it)
 // Choose the playback resolution once, avoiding framebuffer resizes during gestures.
-let normalPixelRatio = null;
 const STATE_NAMES = ['safe', 'burning', 'burned', 'extinguished'];
 
 async function startFire() {
@@ -675,7 +674,6 @@ function showClock() {
   const s = Math.round(displayMinute * 60), end = run.result.frames.at(-1).minute;
   fui.minute.textContent = `Time ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} of ${end}:00`;
 }
-const SMOKE_MAX = 260; // buildings with smoke at once, to keep the map fast
 
 function prepareEffects(r) {
   const frames = r.result.frames, n = r.features.length;
@@ -715,7 +713,7 @@ function shapeOf(i) {
     const v = ring[Math.floor(k * n / count)];
     return [x + (v[0] - x) * 0.55, y + (v[1] - y) * 0.55];
   });
-  const ground = map.queryTerrainElevation([x, y]); // null until the terrain tile has loaded
+  const ground = map.getTerrain() ? map.queryTerrainElevation([x, y]) : 0;
   c = {centre: [x, y], spots, size: Math.sqrt(area / count), alt: ground, h: (f.properties.storeys ?? 1) * STOREY_M};
   run.fx.shapes.set(i, c);
   return c;
@@ -723,6 +721,7 @@ function shapeOf(i) {
 
 function showFrame(k) {
   playbackRendered = false;
+  const quality = renderPerformance.profile;
   frameIndex = k;
   const frames = run.result.frames, states = frames[k].states, minute = frames[k].minute, {ig, out, dur} = run.fx;
   const flames = [], points = [], smoky = [];
@@ -731,7 +730,7 @@ function showFrame(k) {
     if (s === 1) {
       const c = shapeOf(i), alt = (c.alt ?? 0) + c.h;
       const effect = fireGL.profile(run.inputs[i], c.size);
-      c.spots.forEach((lngLat, j) => flames.push({lngLat, alt, ...effect,
+      (quality.flames===1?[c.centre]:c.spots).forEach((lngLat, j) => flames.push({lngLat, alt, ...effect,
         seed: seedOf(i, j), ig: ig[i], dur: dur[i]}));
       points.push({type: 'Feature', geometry: {type: 'Point', coordinates: c.centre}, properties: {ig: ig[i], dur: dur[i], ph: phase(i)}});
     }
@@ -740,9 +739,9 @@ function showFrame(k) {
   // Smoke follows the same saved weather and building inputs as the flames and spread.
   smoky.sort((a, b) => ig[b] - ig[a]);
   const puffs = [];
-  for (const i of smoky.slice(0, SMOKE_MAX)) {
+  for (const i of smoky.slice(0, quality.smoke)) {
     const c = shapeOf(i), effect = fireGL.profile(run.inputs[i], c.size);
-    for (let j = 0; j < 2; j++) {
+    for (let j = 0; j < quality.puffs; j++) {
       puffs.push({lngLat: c.centre, alt: (c.alt ?? 0) + c.h + 2, rise: effect.rise, radius: 3 + c.size * 0.25, seed: seedOf(i, j + 7),
         ig: ig[i], heat: effect.heat, out: Number.isNaN(out[i]) ? 1e9 : out[i], windDx: effect.smokeDx, windDy: effect.smokeDy});
     }
@@ -816,19 +815,14 @@ function fireAffectedNow() {
 
 function play() {
   if (frameIndex >= run.result.frames.length - 1) { displayMinute = 0; showFrame(0); }
-  if (normalPixelRatio === null) normalPixelRatio = map.getPixelRatio();
-  const playbackRatio = Math.min(normalPixelRatio, 0.75);
-  if (map.getPixelRatio() > playbackRatio) map.setPixelRatio(playbackRatio);
   playTimer = true;
+  syncRenderResolution();
   fui.play.textContent = 'Pause';
   activity.status(displayMinute, true);
 }
 function pause() {
   playTimer = null;
-  if (normalPixelRatio !== null) {
-    if (map.getPixelRatio() !== normalPixelRatio) map.setPixelRatio(normalPixelRatio);
-    normalPixelRatio = null;
-  }
+  syncRenderResolution();
   fui.play.textContent = 'Play';
   activity.status(displayMinute, false);
 }

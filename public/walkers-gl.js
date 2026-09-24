@@ -1,9 +1,10 @@
-/* Route segments are uploaded once. Playback and camera gestures only change uniforms;
- * no GeoJSON tiling, symbol placement or worker round trips are needed for each footstep. */
+/* Routes are prepared once; only visible groups' current-minute legs reach the GPU.
+ * Positions interpolate on the original route without GeoJSON updates for each footstep. */
 const IgnisWalkers = (() => {
   function create(map, images) {
     let gl, program, buffer, atlas, visibility, count = 0, minute = 0, seconds = 0, ref = [0, 0, 0], groupWidth = 1;
     let visibleKey = '', visiblePixels = new Uint8Array(4), visibilityDirty = true, vertexData = new Float32Array(0), dataDirty = false, renders = 0, renderedMinute = 0;
+    let routeData=new Float32Array(0), routes=new Map(), visibleIds=[], lastBucket=-1;
     const matrix = new Float32Array(16), corners = [[-1,0],[1,0],[1,1],[-1,0],[1,1],[-1,1]], stride = 11;
     const VS = `precision highp float;
       attribute vec3 a_start; attribute vec3 a_end; attribute vec2 a_times;
@@ -62,7 +63,7 @@ const IgnisWalkers = (() => {
         gl.activeTexture(gl.TEXTURE1); const saved1 = gl.getParameter(gl.TEXTURE_BINDING_2D); gl.bindTexture(gl.TEXTURE_2D, visibility);
         if (visibilityDirty) { gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,groupWidth,1,0,gl.RGBA,gl.UNSIGNED_BYTE,visiblePixels); visibilityDirty=false; }
         gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
-        if (dataDirty) { gl.bufferData(gl.ARRAY_BUFFER,vertexData,gl.STATIC_DRAW); dataDirty=false; }
+        if (dataDirty) { gl.bufferData(gl.ARRAY_BUFFER,vertexData,gl.DYNAMIC_DRAW); dataDirty=false; }
         const m = options.defaultProjectionData.mainMatrix;
         for (let i=0;i<12;i++) matrix[i]=m[i];
         for (let r=0;r<4;r++) matrix[12+r]=m[r]*ref[0]+m[4+r]*ref[1]+m[8+r]*ref[2]+m[12+r];
@@ -85,35 +86,49 @@ const IgnisWalkers = (() => {
       onRemove() {gl.deleteBuffer(buffer);gl.deleteTexture(atlas);gl.deleteTexture(visibility);gl.deleteProgram(program);}
     };
     map.addLayer(layer, 'fire-gl');
+    function updateBatch() {
+      lastBucket=Math.floor(minute);
+      const offsets=IgnisRouteWindow.select(routes,visibleIds,minute), size=6*stride;
+      vertexData=new Float32Array(offsets.length*size);
+      offsets.forEach((offset,i)=>vertexData.set(routeData.subarray(offset,offset+size),i*size));
+      count=offsets.length*6;dataDirty=true;
+    }
     function setRun(groups) {
+      routes=new Map();visibleIds=[];visibleKey='';lastBucket=-1;routeData=new Float32Array(0);
       const first=groups.find(g=>g.coords.length>1)?.coords[0];
       if (!first) {count=0;map.triggerRepaint();return;}
       const origin=maplibregl.MercatorCoordinate.fromLngLat(first);ref=[origin.x,origin.y,0];
-      const packed=[], elevations=new Map();let maxGroup=0;
+      const packed=new Float32Array(groups.reduce((n,g)=>n+Math.max(0,g.coords.length-1),0)*6*stride);
+      const positions=new Map();let maxGroup=0,cursor=0;
       const point=p=>{
-        const key=p.map(v=>v.toFixed(7)).join(',');
-        if(!elevations.has(key))elevations.set(key,map.queryTerrainElevation(p)??0);
-        const m=maplibregl.MercatorCoordinate.fromLngLat(p,elevations.get(key)+0.15);
-        return [m.x-ref[0],m.y-ref[1],m.z];
+        const key=p.join(',');
+        if(positions.has(key))return positions.get(key);
+        const elevation=map.getTerrain()?(map.queryTerrainElevation(p)??0):0;
+        const m=maplibregl.MercatorCoordinate.fromLngLat(p,elevation+0.15);
+        const value=[m.x-ref[0],m.y-ref[1],m.z];positions.set(key,value);return value;
       };
       for(const g of groups){
         maxGroup=Math.max(maxGroup,g.i);
         const points=g.coords.map(point);
+        const segments=new Int32Array(points.length).fill(-1);
         for(let i=1;i<points.length;i++){
           if(g.times[i]<=g.times[i-1])continue;
-          for(const corner of corners)packed.push(...points[i-1],...points[i],g.times[i-1],g.times[i],...corner,g.i);
+          segments[i]=cursor;
+          for(const corner of corners){packed.set([...points[i-1],...points[i],g.times[i-1],g.times[i],...corner,g.i],cursor);cursor+=stride;}
         }
+        routes.set(g.i,{times:g.times,segments});
       }
-      vertexData=new Float32Array(packed);count=vertexData.length/stride;dataDirty=true;
+      routeData=packed.subarray(0,cursor);updateBatch();
       groupWidth=2**Math.ceil(Math.log2(maxGroup+1));visiblePixels=new Uint8Array(groupWidth*4);visibleKey='';visibilityDirty=true;
       map.triggerRepaint();
     }
     function setVisible(ids) {
       const key=ids.join(',');if(key===visibleKey)return;visibleKey=key;visiblePixels.fill(0);
       for(const id of ids)visiblePixels[id*4]=255;visibilityDirty=true;map.triggerRepaint();
+      visibleIds=ids.slice();updateBatch();
     }
-    return {setRun,setVisible,setClock:(m,s)=>{minute=m;seconds=s;},clear:()=>{count=0;visibleKey='';map.triggerRepaint();},
-      stats:()=>({segments:count/6,minute,renderedMinute,renders,visible:visibleKey?visibleKey.split(',').length:0})};
+    return {setRun,setVisible,setClock:(m,s)=>{minute=m;seconds=s;if(Math.floor(m)!==lastBucket)updateBatch();},clear:()=>{count=0;routes.clear();visibleIds=[];visibleKey='';routeData=new Float32Array(0);map.triggerRepaint();},
+      stats:()=>({segments:count/6,totalSegments:routeData.length/(6*stride),minute,renderedMinute,renders,visible:visibleKey?visibleKey.split(',').length:0})};
   }
   return {create};
 })();

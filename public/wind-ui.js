@@ -2,6 +2,7 @@
 const windFX = (() => {
   let map, canvas, ctx, wind, started = null;
   let sprite = null, lastCamera = '', lastSeconds = NaN, lastDraw = -Infinity, direction = null;
+  let quality = {wind:12,windRatio:1};
   const reducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 
   function clear() {
@@ -51,7 +52,7 @@ const windFX = (() => {
     if (!ctx) return;
     started ??= seconds;
     const {clientWidth: width, clientHeight: height} = map.getContainer();
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const ratio = Math.min(window.devicePixelRatio || 1, quality.windRatio);
     const centre = map.getCenter();
     const camera = [centre.lng, centre.lat, map.getZoom(), map.getBearing(), map.getPitch(), width, height, ratio, reducedMotion?.matches].join(',');
     if (seconds === lastSeconds && camera === lastCamera) return;
@@ -84,7 +85,7 @@ const windFX = (() => {
     const travelDistance = 380;
     const cycle = travelDistance / speed;
     // More visible coverage, with a fixed cap and the same cached sprite to keep drawing light.
-    const count = Math.max(10, Math.min(28, Math.round(width * height / 65000)));
+    const count = Math.min(quality.wind, Math.max(8, Math.round(width * height / 65000)));
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     for (let i = 0; i < count; i++) {
@@ -101,5 +102,5 @@ const windFX = (() => {
     }
   }
 
-  return {set, tick, clear};
+  return {set, tick, clear, setQuality:value=>{quality=value;lastCamera='';}};
 })();

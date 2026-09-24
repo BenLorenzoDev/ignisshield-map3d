@@ -247,12 +247,15 @@ function evacTick(minute) {
     // Approximate spacing on the Mercator plane is sufficient for representative selection.
     // The map still renders their exact recorded coordinates on the terrain.
     const occupied = new Set(), scale = 512 * 2 ** map.getZoom();
+    const quality=renderPerformance.profile, bounds=map.getBounds();
     const angle = map.getBearing() * Math.PI / 180, cos = Math.cos(angle), sin = Math.sin(angle);
     const pitchScale = Math.max(0.25, Math.cos(map.getPitch() * Math.PI / 180));
     for (const f of people) {
+      if(evacRepresentatives.size>=quality.walkers)break;
+      if(!bounds.contains(f.geometry.coordinates))continue;
       const p = maplibregl.MercatorCoordinate.fromLngLat(f.geometry.coordinates);
-      const x = Math.floor((p.x * cos + p.y * sin) * scale / 26);
-      const y = Math.floor((-p.x * sin + p.y * cos) * scale * pitchScale / 26);
+      const x = Math.floor((p.x * cos + p.y * sin) * scale / quality.spacing);
+      const y = Math.floor((-p.x * sin + p.y * cos) * scale * pitchScale / quality.spacing);
       if (occupied.has(`${x},${y}`)) continue;
       for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) occupied.add(`${x + dx},${y + dy}`);
       evacRepresentatives.add(f.properties.order);

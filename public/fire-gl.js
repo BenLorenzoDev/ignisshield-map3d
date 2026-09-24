@@ -43,6 +43,7 @@ const fireGL = (() => {
   const FLAME_FS = `
     precision highp float;
     uniform float u_time;
+    uniform float u_simple;
     varying vec2 v_uv;
     varying float v_seed;
     varying float v_int;
@@ -51,7 +52,7 @@ const fireGL = (() => {
       vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
       return texture2D(u_noise, (i + u + 0.5) / 128.0).r;
     }
-    float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
+    float fbm(vec2 p) { if(u_simple>0.5)return noise(p); float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
     void main() {
       float y = v_uv.y;
       float t = u_time * 1.8 + v_seed * 17.0;
@@ -121,6 +122,7 @@ const fireGL = (() => {
 
   let map = null, gl = null, flame = null, smoke = null;
   let noiseTexture = null, lastRepaint = -Infinity, clockDirty = false;
+  let simple = true;
   const matrix = new Float32Array(16);
   let ref = [0, 0, 0];                // mercator origin for this run (keeps float32 precise)
   let minute = 0, time = 0;
@@ -141,7 +143,7 @@ const fireGL = (() => {
     const loc = {};
     for (const [name, size] of attrs) loc[name] = [gl.getAttribLocation(p, name), size];
     const uni = n => gl.getUniformLocation(p, n);
-    return {p, loc, u: {matrix: uni('u_matrix'), minute: uni('u_minute'), time: uni('u_time'), viewport: uni('u_viewport'), noise: uni('u_noise')},
+    return {p, loc, u: {matrix: uni('u_matrix'), minute: uni('u_minute'), time: uni('u_time'), viewport: uni('u_viewport'), noise: uni('u_noise'), simple: uni('u_simple')},
       buffer: gl.createBuffer(), count: 0, stride: attrs.reduce((s, [, n]) => s + n, 0)};
   }
 
@@ -161,6 +163,7 @@ const fireGL = (() => {
     gl.uniformMatrix4fv(prog.u.matrix, false, matrix);
     gl.uniform1f(prog.u.minute, minute);
     gl.uniform1f(prog.u.time, time);
+    gl.uniform1f(prog.u.simple, simple?1:0);
     gl.uniform1i(prog.u.noise, 0);
     gl.uniform2f(prog.u.viewport, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.bindBuffer(gl.ARRAY_BUFFER, prog.buffer);
@@ -268,6 +271,7 @@ const fireGL = (() => {
       rise: (16 + size * 0.4) * strength, heat: Math.min(1.4, strength)};
   }
 
-  return {layer, setData, setClock, profile};
+  return {layer, setData, setClock, profile, setQuality: value=>{simple=value;map?.triggerRepaint();},
+    stats:()=>({flames:(flame?.count??0)/6,smoke:(smoke?.count??0)/6,simple})};
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = fireGL;

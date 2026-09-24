@@ -20,6 +20,9 @@ html, body { margin: 0; height: 100%; background: #dfe6e9; font-family: system-u
 #title, .group, #toolbar > button, #hint, #panel { background: rgba(255,255,255,.95); border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
 #title { padding: 7px 10px; font-weight: 600; }
 .group { display: flex; overflow: hidden; }
+.graphics-control { align-items:center; gap:6px; padding:4px 8px; font-size:12px; }
+.graphics-control select { font:inherit; padding:3px; border:1px solid #b4bec7; border-radius:4px; background:#fff; }
+.graphics-control small { color:#42624e; }
 button { font: inherit; border: 0; padding: 7px 12px; cursor: pointer; background: transparent; color: #222; }
 .group button + button { border-left: 1px solid #ddd; }
 button[aria-pressed="true"] { background: #2d3436; color: #fff; }

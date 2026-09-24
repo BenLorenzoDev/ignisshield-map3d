@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>IgnisShield Map 3D</title>
   <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
-  <link rel="stylesheet" href="styles.css?v=20260924-report2">
+  <link rel="stylesheet" href="styles.css?v=20260924-lowpower1">
 </head>
 <body class="loading">
   <div id="map"></div>
@@ -27,6 +27,10 @@
       <label><input id="show-roads" type="checkbox" checked> Roads</label>
       <label><input id="show-tracks" type="checkbox" checked> GPS tracks</label>
     </div>
+    <label class="group graphics-control">Graphics
+      <select id="graphics-quality" aria-label="Graphics quality"><option value="auto">Auto</option><option value="low">Low power</option><option value="detailed">Detailed</option></select>
+      <small id="graphics-status" aria-live="polite"></small>
+    </label>
     <button id="trace" class="primary">Trace building</button>
     <button id="draw-path" class="primary">Draw path</button>
     <button id="routes-btn" aria-pressed="false">Routes</button>
@@ -324,18 +328,21 @@
   <script src="routing.js"></script>
   <script src="evac.js?v=20260924-walkers1"></script>
   <script src="bfp.js?v=20260924-fleet2"></script>
-  <script src="fire-gl.js?v=20260924-smooth1"></script>
-  <script src="walkers-gl.js?v=20260924-smooth4"></script>
-  <script src="wind-ui.js?v=20260924-visible2"></script>
+  <script src="fire-gl.js?v=20260924-lowpower1"></script>
+  <script src="route-window.js?v=20260924-lowpower1"></script>
+  <script src="walkers-gl.js?v=20260924-lowpower1"></script>
+  <script src="wind-ui.js?v=20260924-lowpower1"></script>
   <script src="field.js"></script>
-  <script src="app.js?v=20260924-survey1"></script>
+  <script src="performance.js?v=20260924-lowpower1"></script>
+  <script src="app.js?v=20260924-lowpower1"></script>
   <script src="playback.js?v=20260924-playback1"></script>
-  <script src="fire-ui.js?v=20260924-fleet2"></script>
+  <script src="fire-ui.js?v=20260924-lowpower1"></script>
   <script src="activity-ui.js?v=20260924-locate1"></script>
   <script src="route-ui.js"></script>
   <script src="paths-ui.js?v=20260924-survey3"></script>
-  <script src="evac-ui.js?v=20260924-fleet2"></script>
+  <script src="evac-ui.js?v=20260924-lowpower1"></script>
   <script src="bfp-ui.js?v=20260924-fleet2"></script>
+  <script src="performance-ui.js?v=20260924-lowpower1"></script>
   <script src="cloud-ui.js"></script>
 </body>
 </html>

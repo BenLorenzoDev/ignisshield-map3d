@@ -25,11 +25,14 @@ const buildingColor = burning => ['match', ['coalesce', ['feature-state', 'fire'
   'burning', burning, 'burned', FIRE.burned, 'extinguished', '#78909c',
   ['case', ['all', ['==', ['get', 'origin'], 'ai'], ['!', ['coalesce', ['get', 'edited'], false]]], COLOR.ai, COLOR.user]];
 
+const renderPerformance = IgnisPerformance.create((() => { try { return localStorage.getItem('ignisshield-map3d.graphics') || 'auto'; } catch { return 'auto'; } })());
 const map = new maplibregl.Map({
   container: 'map',
   style: 'https://tiles.openfreemap.org/styles/liberty',
-  center: centre, zoom: 16.4, pitch: 60, bearing: -20, maxPitch: 85,
-  canvasContextAttributes: {antialias: true}
+  center: centre, zoom: 16.4, pitch: renderPerformance.level===2?0:60,
+  bearing: renderPerformance.level===2?0:-20, maxPitch: renderPerformance.level===2?0:85,
+  pixelRatio: Math.min(window.devicePixelRatio || 1, renderPerformance.profile.ratio),
+  canvasContextAttributes: {antialias: false}
 });
 map.addControl(new maplibregl.NavigationControl({visualizePitch: true}));
 map.addControl(new maplibregl.ScaleControl());
@@ -69,7 +72,7 @@ ui.imagery.addEventListener('change', () => {
   map.getSource('satellite')?.setTiles(waybackTiles(imagery.release));
 });
 
-let view = '3d';
+let view = renderPerformance.level===2?'2d':'3d';
 let drawing = null;        // [lng, lat][] while tracing
 let selectedId = null;
 let original = null;       // geometry of the selected building before this editing session
@@ -180,8 +183,9 @@ map.on('load', async () => {
     tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
     attribution: 'Elevation: Mapzen / AWS Terrain Tiles'
   });
-  map.setTerrain({source: 'dem', exaggeration: 1.3});
+  if (renderPerformance.profile.terrain) map.setTerrain({source: 'dem', exaggeration: 1.3});
   map.addLayer({id: 'hillshade', type: 'hillshade', source: 'dem',
+    layout: {visibility: renderPerformance.profile.terrain?'visible':'none'},
     paint: {'hillshade-shadow-color': '#473B24', 'hillshade-exaggeration': 0.4}}, 'building');
   map.setSky({'sky-color': '#9ec9ec', 'horizon-color': '#e8f1f8', 'fog-color': '#ffffff', 'sky-horizon-blend': 0.5});
 
@@ -272,6 +276,7 @@ map.on('load', async () => {
   initBfp();
   document.body.classList.remove('loading'); // toolbar usable once every layer exists
   applyLayers();
+  applyRenderQuality();
 });
 
 // ---------- what is shown ----------

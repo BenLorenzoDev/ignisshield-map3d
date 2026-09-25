@@ -83,6 +83,7 @@ hr { border: 0; border-top: 1px solid #e3e6e8; margin: 4px 0; width: 100%; }
 .batch th, .batch td { text-align: right; padding: 2px 4px; border-bottom: 1px solid #f0f2f4; }
 .batch th { color: #555; font-weight: 600; }
 .batch td button { padding: 1px 6px; background: #eef1f4; border-radius: 3px; }
+.batch button.rerun { padding: 2px 8px; margin-left: 4px; background: #fdecea; color: #8a1c14; border-radius: 3px; font-size: 12px; font-weight: 600; }
 #batch-run { font: inherit; }
 .metric small { color: #666; }
 #metrics { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }

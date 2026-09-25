@@ -20,7 +20,10 @@ let bfpShown = null; // timeline of the run on screen
 let bfpVisualsEmpty = false;
 let bfpStationLabel = '';
 
-function bfpSettings() { return {on: false, ...IgnisBFP.DEFAULTS, ...(scenario.bfp || {})}; }
+function bfpSettings() {
+  const s = {on: false, ...IgnisBFP.DEFAULTS, ...(scenario.bfp || {})};
+  return typeof rerun !== 'undefined' && rerun ? {...s, on: false} : s; // logged batches that can be re-run had the BFP off
+}
 function renderBfpForm() {
   const s = bfpSettings();
   bui.toggle.checked = s.on;

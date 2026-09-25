@@ -50,4 +50,23 @@ test('buildings saved in model units migrate to paper fields', () => {
   assert.deepEqual(p, {Mb: 1300, O2: 1.2, Nh: 2, Wr: 1.5});
   assert.equal(P.migrate(p), false);
 });
+test('a logged trial batch gives back its settings and values for every building', () => {
+  const rec = {batch: 'b1', run_in_batch: 1, seed: 42, ignition: 'traced-1', max_minutes: 5, extent: 'all mapped buildings', n_buildings: 404,
+    inputs: 'trial values, all buildings', scenario: 'Trial B conditions', bfp_response: 'off', Y1_Sf: 0.037,
+    X1_Db: 0.0063, X2_Mb_MJ_m2: 600, X3_O2_ratio: 1, X4_Hr_pct: 80, X5_Ta_C: 28, X6_Nh: 1, X7_Wr_m: 1.8, X8_Uw_m_s: 2.1, X9_Tw_deg: 210};
+  const s = P.rerunSettings([{...rec, run_in_batch: 3, seed: 44, Y1_Sf: 0.0947}, rec, {...rec, run_in_batch: 2, seed: 43, Y1_Sf: 0.039}]);
+  assert.deepEqual([s.seed, s.repeats, s.minutes, s.boundaryOnly, s.mode], [42, 3, 5, false, 'all']);
+  assert.deepEqual(s.expected, {42: 0.037, 43: 0.039, 44: 0.0947});
+  assert.deepEqual(P.rerunPaperValues(s, {Mb: 900}), {Db: 0.0063, Mb: 600, O2: 1, Hr: 80, Ta: 28, Nh: 1, Wr: 1.8, Uw: 2.1, Tw: 210});
+});
+test('a logged custom batch keeps each building\'s own values and a measured density', () => {
+  const rec = {batch: 'b2', run_in_batch: 1, seed: 42, inputs: 'per building + weather', extent: 'study boundary', bfp_response: 'off',
+    X1_Db: 'measured 0.01521', X2_Mb_MJ_m2: 700, X3_O2_ratio: 1, X4_Hr_pct: 71, X5_Ta_C: 29, X6_Nh: 1, X7_Wr_m: 2, X8_Uw_m_s: 1.1, X9_Tw_deg: 259};
+  const s = P.rerunSettings([rec]);
+  assert.equal(s.values.Db, null);
+  assert.equal(s.boundaryOnly, true);
+  assert.deepEqual(P.rerunPaperValues(s, {Db: null, Mb: 900, O2: 1, Nh: 2, Wr: 3, Hr: 50, Ta: 20, Uw: 9, Tw: 0}),
+    {Db: null, Mb: 900, O2: 1, Nh: 2, Wr: 3, Hr: 71, Ta: 29, Uw: 1.1, Tw: 259});
+  assert.throws(() => P.rerunSettings([{...rec, bfp_response: 'on'}]), /BFP/);
+});
 console.log(`All ${n} paper conversion tests passed.`);

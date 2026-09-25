@@ -232,7 +232,27 @@
     return changed;
   }
 
-  const api = {INPUTS, BY_KEY, DEFAULTS, RULES, RULE_TEXT, TRIALS, OUTPUT_NOTES, INFO, OUT_INFO, materialClass, localDensity, check, toModel, level, outputs, migrate};
+  // ---------- re-running a logged batch ----------
+  /** The settings that reproduce a logged batch, from its run-log records (any order). Throws if it cannot be re-run. */
+  function rerunSettings(rows) {
+    const list = rows.slice().sort((a, b) => a.run_in_batch - b.run_in_batch), r = list[0];
+    if (r.bfp_response === 'on') throw new Error('This batch used the BFP response, whose full settings are not in the log.');
+    const custom = String(r.inputs).startsWith('per building');
+    const values = {Db: typeof r.X1_Db === 'number' ? r.X1_Db : null, Mb: r.X2_Mb_MJ_m2, O2: r.X3_O2_ratio, Hr: r.X4_Hr_pct,
+      Ta: r.X5_Ta_C, Nh: r.X6_Nh, Wr: r.X7_Wr_m, Uw: r.X8_Uw_m_s, Tw: r.X9_Tw_deg};
+    return {
+      batch: r.batch, ignition: r.ignition, seed: r.seed - (r.run_in_batch - 1), repeats: list.at(-1).run_in_batch,
+      minutes: r.max_minutes, boundaryOnly: r.extent === 'study boundary', nBuildings: r.n_buildings,
+      // Trial batches gave every building the recorded values; custom batches used each building's own values plus the weather.
+      mode: custom ? 'custom' : 'all', values, weather: {Hr: values.Hr, Ta: values.Ta, Uw: values.Uw, Tw: values.Tw},
+      scenario: r.scenario, inputs: r.inputs, weatherSource: r.weather_source,
+      expected: Object.fromEntries(list.map(x => [x.seed, x.Y1_Sf]))
+    };
+  }
+  /** Paper values of one building in a re-run. own = that building's paper values in custom mode (Db null = measured). */
+  const rerunPaperValues = (s, own) => (s.mode === 'all' ? {...s.values} : {...own, ...s.weather});
+
+  const api = {INPUTS, BY_KEY, DEFAULTS, RULES, RULE_TEXT, TRIALS, OUTPUT_NOTES, INFO, OUT_INFO, materialClass, localDensity, check, toModel, level, outputs, migrate, rerunSettings, rerunPaperValues};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.IgnisPaper = api;
 })(globalThis);

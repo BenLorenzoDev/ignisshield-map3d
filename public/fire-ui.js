@@ -421,13 +421,17 @@ fui.guideHide.addEventListener('click', () => { guideHidden = true; try { localS
 fui.help.addEventListener('click', () => { guideHidden = false; try { localStorage.removeItem(GUIDE_KEY); } catch { /* ignore */ } select(null); updateGuide(); });
 fui.panelClose.addEventListener('click', () => select(null));
 
-/** The nine paper inputs used for a building in the current scenario. */
+/** The nine paper inputs used for a building in the current scenario (or in the logged batch being re-run). */
 function buildingPaperValues(f) {
+  if (rerun) return P.rerunPaperValues(rerun, customPaperValues(f));
   if (P.TRIALS[scenario.source]) {
     const values = {...scenario.trials[scenario.source]};
     if (scenario.weatherOverride) for (const v of P.INPUTS.filter(v=>v.scope==='weather')) values[v.key] = scenario.custom[v.key];
     return values;
   }
+  return customPaperValues(f);
+}
+function customPaperValues(f) {
   const p = f.properties, own = {};
   for (const v of BUILDING_FIELDS) own[v.key] = typeof p[v.key] === 'number' ? p[v.key] : (v.auto ? null : v.def);
   const {Hr, Ta, Uw, Tw} = scenario.custom;
@@ -448,7 +452,7 @@ function modelInputs(features) {
  */
 function runBuildings() {
   const all = store.features.slice().sort((a, b) => (a.properties.id < b.properties.id ? -1 : a.properties.id > b.properties.id ? 1 : 0));
-  if (!scenario.boundaryOnly) return all;
+  if (!(rerun ? rerun.boundaryOnly : scenario.boundaryOnly)) return all;
   const b = studyData.features.find(f => f.properties.kind === 'boundary');
   const ring = b.geometry.coordinates[0].map(IgnisFire.UTM);
   const fp = IgnisFire.footprints(all);
@@ -516,14 +520,27 @@ function renderLog() {
     const summary = rows.length > 1
       ? `<div class="muted small">Mean Sf ${mean(sf).toFixed(3)} ± ${sd(sf).toFixed(3)} (SD) · ${P.level(mean(sf))} · mean Ab ${Math.round(mean(ab)).toLocaleString()} m²</div>` : '';
     const owner = r0.shared ? ` · by ${esc(r0.by ?? 'class')}` : cloud.enabled ? ' · <i>this device only</i>' : '';
-    return `<div class="batch"><div><b>${esc(r0.scenario)}</b> · start ${esc(r0.ignition)} · ${r0.n_buildings} buildings · ${new Date(r0.utc).toLocaleString()}${owner}</div>${summary}
+    const again = r0.bfp_response === 'on'
+      ? '<span class="muted small" title="The log does not keep the full BFP settings">Cannot re-run (BFP on)</span>'
+      : `<button class="rerun" data-rerun="${esc(batch)}" title="Run this batch again with its logged inputs, starting building, replay numbers and run length">Re-run this batch</button>`;
+    return `<div class="batch"><div><b>${esc(r0.scenario)}</b> · start ${esc(r0.ignition)} · ${r0.n_buildings} buildings · ${r0.max_minutes} min · ${new Date(r0.utc).toLocaleString()}${owner} ${again}</div>${summary}
       <table><thead><tr><th title="Replay number (random seed)">Replay #</th><th>Sf</th><th>Level</th><th>If kW/m</th><th>R m/min</th><th>Q MW</th><th>Ab m²</th><th>φs °</th><th>τb min</th><th>Tsim min</th><th></th></tr></thead><tbody>
       ${rows.map(r => `<tr><td>${esc(r.seed)}</td><td>${r.Y1_Sf.toFixed(3)}</td><td>${esc(r.level)}</td><td>${r.Y2_If_kW_m.toFixed(1)}</td><td>${r.Y3_R_m_min.toFixed(2)}</td><td>${r.Y4_Q_MW.toFixed(2)}</td><td>${Math.round(r.Y5_Ab_m2).toLocaleString()}</td><td>${r.Y6_phi_deg === '' ? '—' : esc(r.Y6_phi_deg)}</td><td>${r.Y7_tau_min.toFixed(1)}</td><td>${esc(r.Y8_Tsim_min)}</td>
         <td>${sessionRuns.has(r.id) ? `<button data-replay="${esc(r.id)}">Replay</button>` : '<span class="muted small" title="Frames are kept only in the session that ran them">—</span>'}</td></tr>`).join('')}
       </tbody></table></div>`;
   }).join('');
 }
-fui.logBody.addEventListener('click', e => { const id = e.target.dataset.replay; if (id) showRun(id); });
+fui.logBody.addEventListener('click', e => {
+  const {replay, rerun: batch} = e.target.dataset;
+  if (replay) showRun(replay);
+  if (!batch) return;
+  if (fireStarting) { showHint('A simulation is already running.', 5000); return; }
+  let settings;
+  try { settings = P.rerunSettings(runLog.filter(r => r.batch === batch)); } catch (err) { showHint(err.message, 8000); return; }
+  if (!store.features.some(f => f.properties.id === settings.ignition)) { showHint(`The starting building ${settings.ignition} is no longer on the map.`, 8000); return; }
+  openSide(null);
+  startFire(settings);
+});
 fui.logClear.addEventListener('click', () => {
   const local = runLog.filter(r => !r.shared).length;
   if (!local) { showHint(cloud.enabled ? 'No runs saved on this device. Shared class runs can only be removed in the Supabase dashboard.' : 'The log is empty.', 6000); return; }
@@ -545,6 +562,7 @@ fui.logCsv.addEventListener('click', () => {
 
 // ---------- running ----------
 let run = null;   // run being shown: {id, result, features, ids}
+let rerun = null; // P.rerunSettings() of the logged batch being re-run, while it runs
 let fireStarting = false;
 function buildingSelectionLocked() { return fireStarting || run !== null; }
 function canInspectBuildingResults() {
@@ -563,11 +581,14 @@ let resultsDismissed = false, ignitionHold = 0, originMarker = null;
 // Choose the playback resolution once, avoiding framebuffer resizes during gestures.
 const STATE_NAMES = ['safe', 'burning', 'burned', 'extinguished'];
 
-async function startFire() {
+/** Runs a batch from the selected building and the scenario, or re-runs a logged batch when `again` (P.rerunSettings) is given. */
+async function startFire(again = null) {
+  if (again) { clearFire(); select(null); }
   if (buildingSelectionLocked()) return;
-  const origin = selected();
+  const origin = again ? store.features.find(f => f.properties.id === again.ignition) : selected();
   if (!origin) return;
   fireStarting = true;
+  rerun = again;
   fui.ignite.disabled = true;
   fui.ignite.textContent = 'Calculating…';
   let evacCtx = null;
@@ -579,16 +600,18 @@ async function startFire() {
     const features = structuredClone(sourceFeatures); // keep each run independent of later map edits
     if (index < 0) throw new Error('This building is outside the study boundary. Untick "Only buildings inside the study boundary" or choose another building.');
     const inputs = modelInputs(features);
-    const runSettings = structuredClone(scenario);
+    if (again && features.length !== again.nBuildings) showHint(`The map now has ${features.length} buildings in this run; the logged batch had ${again.nBuildings}, so results may differ.`, 9000);
+    const runSettings = again ? {...structuredClone(scenario), seed: again.seed, repeats: again.repeats, minutes: again.minutes, boundaryOnly: again.boundaryOnly}
+      : structuredClone(scenario);
     const batch = `b${Date.now()}`, utc = new Date().toISOString();
-    const trial = P.TRIALS[scenario.source];
+    const trial = again ? null : P.TRIALS[scenario.source];
     const x = buildingPaperValues(origin), local = measuredDensity().get(origin.properties.id);
     const ids = features.map(f => f.properties.id);
     const w = x, wind = {Tw: w.Tw, Uw: w.Uw}; // use the exact effective inputs, including custom weather
     const calculation = IgnisCalculationReport.capture(features, features.map(buildingPaperValues),
       features.map(f => measuredDensity().get(f.properties.id)), {utc, trial:trial?scenario.source:null,
-        weatherOverride:scenario.weatherOverride, weatherSource:scenario.custom.source, originIndex:index, maxMinutes:scenario.minutes,
-        extent:scenario.boundaryOnly?'Study boundary only':'All mapped buildings', bfp:bfpSettings()});
+        weatherOverride:scenario.weatherOverride, weatherSource:again ? again.weatherSource : scenario.custom.source, originIndex:index, maxMinutes:runSettings.minutes,
+        extent:runSettings.boundaryOnly?'Study boundary only':'All mapped buildings', bfp:bfpSettings()});
     await activity.stage('Preparing roads and escape paths', 'Building the route network for evacuation and any enabled BFP response.');
     // Evacuation on foot for every run (same network and residents for the whole batch)
     evacCtx = await prepareEvac(features, inputs, calculation.buildings.map(b => b.paper.Nh));
@@ -603,12 +626,12 @@ async function startFire() {
       sessionRuns.set(id, {id, result, features, ids, seed, wind, inputs, evac, bfp: timeline, noBfpIgnited, calculation});
       const out = P.outputs(result.metrics);
       records.push({
-        id, batch, utc, run_in_batch: k + 1, scenario: (trial ? `Trial ${runSettings.source} ${runSettings.weatherOverride ? 'building inputs + custom weather' : 'conditions'}` : 'Custom') + ' · surveyed routes',
+        id, batch, utc, run_in_batch: k + 1, scenario: again ? `${again.scenario.replace(/ · re-run of b\d+$/, '')} · re-run of ${again.batch}` : (trial ? `Trial ${runSettings.source} ${runSettings.weatherOverride ? 'building inputs + custom weather' : 'conditions'}` : 'Custom') + ' · surveyed routes',
         ignition: origin.properties.id, seed, max_minutes: runSettings.minutes, n_buildings: features.length,
-        extent: runSettings.boundaryOnly ? 'study boundary' : 'all mapped buildings', inputs: trial ? (runSettings.weatherOverride ? 'trial building values + custom weather' : 'trial values, all buildings') : 'per building + weather',
+        extent: runSettings.boundaryOnly ? 'study boundary' : 'all mapped buildings', inputs: again ? again.inputs : trial ? (runSettings.weatherOverride ? 'trial building values + custom weather' : 'trial values, all buildings') : 'per building + weather',
         X1_Db: x.Db ?? `measured ${local.Db.toFixed(5)}`, X2_Mb_MJ_m2: x.Mb, X3_O2_ratio: x.O2, X4_Hr_pct: x.Hr, X5_Ta_C: x.Ta,
         X6_Nh: x.Nh, X7_Wr_m: x.Wr, X8_Uw_m_s: x.Uw, X9_Tw_deg: x.Tw,
-        weather_source: trial && !runSettings.weatherOverride ? 'trial values' : (runSettings.custom.source ?? 'entered by hand'),
+        weather_source: again ? again.weatherSource : trial && !runSettings.weatherOverride ? 'trial values' : (runSettings.custom.source ?? 'entered by hand'),
         Y1_Sf: out[0].value, level: P.level(out[0].value), Y2_If_kW_m: out[1].value, Y3_R_m_min: out[2].value, Y4_Q_MW: out[3].value,
         Y5_Ab_m2: out[4].value, Y6_phi_deg: out[5].value, Y7_tau_min: out[6].value, Y8_Tsim_min: out[7].value,
         evac_routing: evacCtx.routingMode,
@@ -633,11 +656,17 @@ async function startFire() {
     fui.batchRun.innerHTML = Array.from({length: runSettings.repeats}, (_, k) => `<option value="${batch}-${k}">Run ${k + 1} of ${runSettings.repeats} · replay #${runSettings.seed + k}</option>`).join('');
     select(null);
     showRun(first);
+    if (again) {
+      const same = records.every(r => r.seed in again.expected && Math.abs(r.Y1_Sf - again.expected[r.seed]) < 5e-5);
+      const list = records.map(r => `#${r.seed} ${r.Y1_Sf.toFixed(4)}`).join(', ');
+      showHint(same ? `Re-run matches the class log: Sf ${list}.` : `Re-run finished (Sf ${list}) but differs from the log: the map or building values have changed since that batch.`, 12000);
+    }
   } catch (err) {
     activity.fail(err.message);
     showHint(`The fire model could not run: ${err.message}`, 9000);
   } finally {
     evacCtx?.dispose?.();
+    rerun = null;
     fireStarting = false;
     fui.ignite.disabled = run !== null;
     fui.ignite.textContent = 'Start fire here';
@@ -880,7 +909,7 @@ function clearFire() {
   if (typeof onFireFrame === 'function') onFireFrame();
 }
 
-fui.ignite.addEventListener('click', startFire);
+fui.ignite.addEventListener('click', () => startFire());
 fui.play.addEventListener('click', () => (playTimer ? pause() : play()));
 fui.restart.addEventListener('click', () => { displayMinute = 0; ignitionHold = 1.5; showFrame(0); play(); });
 fui.skip.addEventListener('click', () => { pause(); displayMinute = run.result.frames.length - 1; showFrame(displayMinute); });
